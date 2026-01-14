@@ -463,11 +463,18 @@ impl GraphRAG {
         } else {
             // Pattern-based extraction (regex + capitalization)
             use crate::entity::EntityExtractor;
+            use crate::config::setconfig::EntityExtractionConfig;
 
             #[cfg(feature = "tracing")]
             tracing::info!("Using pattern-based entity extraction");
 
-            let extractor = EntityExtractor::new(self.config.entities.min_confidence)?;
+            // Build EntityExtractionConfig from the main config's entity types
+            let entity_extraction_config = EntityExtractionConfig {
+                entity_types: Some(self.config.entities.entity_types.clone()),
+                confidence_threshold: self.config.entities.min_confidence,
+                ..Default::default()
+            };
+            let extractor = EntityExtractor::with_config(entity_extraction_config)?;
 
             // Create progress bar for pattern-based extraction
             let pb = ProgressBar::new(total_chunks as u64);
@@ -576,7 +583,13 @@ impl GraphRAG {
         #[cfg(feature = "tracing")]
         tracing::info!("Using pattern-based entity extraction (sync mode)");
 
-        let extractor = EntityExtractor::new(self.config.entities.min_confidence)?;
+        // Build EntityExtractionConfig from the main config's entity types
+        let entity_extraction_config = crate::config::setconfig::EntityExtractionConfig {
+            entity_types: Some(self.config.entities.entity_types.clone()),
+            confidence_threshold: self.config.entities.min_confidence,
+            ..Default::default()
+        };
+        let extractor = EntityExtractor::with_config(entity_extraction_config)?;
 
         for chunk in &chunks {
             let entities = extractor.extract_from_chunk(chunk)?;

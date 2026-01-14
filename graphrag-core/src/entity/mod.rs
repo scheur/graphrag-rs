@@ -136,6 +136,37 @@ impl EntityExtractor {
                 "OBJECT" | "TOOL" | "ARTIFACT" | "ITEM" => {
                     entities.extend(self.extract_objects(text, &chunk.id)?);
                 }
+                // CODE ENTITY TYPES - Rust-aware extraction
+                "FUNCTION" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "FUNCTION", r"(?:pub\s+)?(?:async\s+)?fn\s+([a-z_][a-z0-9_]*)")?);
+                }
+                "STRUCT" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "STRUCT", r"(?:pub\s+)?struct\s+([A-Z][a-zA-Z0-9]*)")?);
+                }
+                "ENUM" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "ENUM", r"(?:pub\s+)?enum\s+([A-Z][a-zA-Z0-9]*)")?);
+                }
+                "TRAIT" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "TRAIT", r"(?:pub\s+)?trait\s+([A-Z][a-zA-Z0-9]*)")?);
+                }
+                "IMPL" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "IMPL", r"impl(?:<[^>]+>)?\s+([A-Z][a-zA-Z0-9]*)")?);
+                }
+                "MODULE" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "MODULE", r"(?:pub\s+)?mod\s+([a-z_][a-z0-9_]*)")?);
+                }
+                "CRATE" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "CRATE", r"use\s+([a-z_][a-z0-9_]*)::")?);
+                }
+                "TYPE" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "TYPE", r"(?:pub\s+)?type\s+([A-Z][a-zA-Z0-9]*)\s*(?:<[^>]+>)?\s*=")?);
+                }
+                "CONST" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "CONST", r"(?:pub\s+)?const\s+([A-Z_][A-Z0-9_]*)\s*:")?);
+                }
+                "MACRO" => {
+                    entities.extend(self.extract_code_entities(text, &chunk.id, "MACRO", r"macro_rules!\s+([a-z_][a-z0-9_]*)")?);
+                }
                 _ => {
                     // For any other entity type, use generic extraction
                     entities.extend(self.extract_generic_entities(text, &chunk.id, entity_type)?);
@@ -1036,6 +1067,38 @@ impl EntityExtractor {
     }
 
     /// Generic entity extraction for any configured entity type
+    /// Extract code entities using regex patterns (for Rust code analysis)
+    fn extract_code_entities(
+        &self,
+        text: &str,
+        chunk_id: &ChunkId,
+        entity_type: &str,
+        pattern: &str,
+    ) -> Result<Vec<Entity>> {
+        let mut entities = Vec::new();
+        let regex = match Regex::new(pattern) {
+            Ok(r) => r,
+            Err(_) => return Ok(entities),
+        };
+
+        for cap in regex.captures_iter(text) {
+            if let Some(name_match) = cap.get(1) {
+                let name = name_match.as_str().to_string();
+                if name.len() >= 2 {
+                    entities.push(self.create_entity(
+                        name,
+                        entity_type,
+                        0.95, // High confidence for regex matches
+                        chunk_id,
+                        text,
+                    )?);
+                }
+            }
+        }
+
+        Ok(entities)
+    }
+
     fn extract_generic_entities(
         &self,
         text: &str,

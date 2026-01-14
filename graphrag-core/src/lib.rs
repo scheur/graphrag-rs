@@ -230,7 +230,26 @@ pub use crate::retrieval::hipporag_ppr::{
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
+/// // Replaced example (added no_run wrapper for doctest stability):
+/// // use graphrag_core::{GraphRAG, Config};
+/// //
+/// // # fn example() -> graphrag_core::Result<()> {
+/// // let config = Config::default();
+/// // let mut graphrag = GraphRAG::new(config)?;
+/// // graphrag.initialize()?;
+/// //
+/// // // Add documents
+/// // graphrag.add_document_from_text("Your document text")?;
+/// //
+/// // // Build knowledge graph
+/// // graphrag.build_graph()?;
+/// //
+/// // // Query
+/// // let answer = graphrag.ask("Your question?")?;
+/// // println!("Answer: {}", answer);
+/// // # Ok(())
+/// // # }
 /// use graphrag_core::{GraphRAG, Config};
 ///
 /// # fn example() -> graphrag_core::Result<()> {

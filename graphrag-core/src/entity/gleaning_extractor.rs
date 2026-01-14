@@ -436,11 +436,27 @@ impl GleaningEntityExtractor {
 
     /// Normalize entity name for ID generation
     fn normalize_name(&self, name: &str) -> String {
-        name.to_lowercase()
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '_')
-            .collect::<String>()
-            .replace(' ', "_")
+        // Replaced normalization (collapsed spaces before replacement):
+        //
+        // name.to_lowercase()
+        //     .chars()
+        //     .filter(|c| c.is_alphanumeric() || *c == '_')
+        //     .collect::<String>()
+        //     .replace(' ', "_")
+
+        let mut sanitized = String::with_capacity(name.len());
+        for ch in name.to_lowercase().chars() {
+            if ch.is_alphanumeric() || ch == '_' {
+                sanitized.push(ch);
+            } else {
+                sanitized.push(' ');
+            }
+        }
+
+        sanitized
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("_")
     }
 
     /// Get extraction statistics

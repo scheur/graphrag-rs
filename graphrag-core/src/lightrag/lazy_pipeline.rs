@@ -138,7 +138,7 @@ impl LazyGraphRAGPipeline {
             self.graph_builder
                 .add_document_concepts(document_id, concepts.clone());
             self.graph_builder
-                .add_chunk_concepts(&chunk.id.as_str(), concepts);
+                .add_chunk_concepts(chunk.id.as_ref(), concepts);
 
             // Store chunk
             self.chunks.insert(chunk.id.clone(), chunk);
@@ -166,7 +166,8 @@ impl LazyGraphRAGPipeline {
                     let entity_id = crate::core::EntityId::new(self.normalize_concept(concept_text));
 
                     for chunk_id in &concept.chunk_ids {
-                        index.add_mapping(&entity_id, chunk_id);
+                        let chunk_id = ChunkId::new(chunk_id.clone());
+                        index.add_mapping(&entity_id, &chunk_id);
                     }
                 }
             }
@@ -307,20 +308,6 @@ pub struct GraphStatistics {
 
     /// Number of relationships in graph
     pub relation_count: usize,
-}
-
-impl SearchResults {
-    pub(crate) fn new(query: String) -> Self {
-        Self {
-            query,
-            depth_reached: 0,
-            total_chunks: 0,
-            total_concepts_explored: 0,
-            depth_results: Vec::new(),
-            chunk_ids: Vec::new(),
-            stop_reason: crate::lightrag::iterative_deepening::StopReason::MaxDepthReached,
-        }
-    }
 }
 
 #[cfg(test)]

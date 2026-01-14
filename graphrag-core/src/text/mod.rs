@@ -229,12 +229,32 @@ impl TextProcessor {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
+    /// // Replaced example (missing document setup and Result wrapper):
+    /// // use graphrag_core::text::{TextProcessor, HierarchicalChunkingStrategy};
+    /// //
+    /// // let processor = TextProcessor::new(1000, 100)?;
+    /// // let strategy = HierarchicalChunkingStrategy::new(500, 50, document.id.clone());
+    /// // let chunks = processor.chunk_with_strategy(&document, &strategy)?;
+    /// # fn example() -> graphrag_core::Result<()> {
     /// use graphrag_core::text::{TextProcessor, HierarchicalChunkingStrategy};
+    /// use graphrag_core::{Document, DocumentId};
+    /// use indexmap::IndexMap;
+    ///
+    /// let document = Document {
+    ///     id: DocumentId::new("doc1".to_string()),
+    ///     title: "Example".to_string(),
+    ///     content: "This is a document.".to_string(),
+    ///     metadata: IndexMap::new(),
+    ///     chunks: Vec::new(),
+    /// };
     ///
     /// let processor = TextProcessor::new(1000, 100)?;
     /// let strategy = HierarchicalChunkingStrategy::new(500, 50, document.id.clone());
     /// let chunks = processor.chunk_with_strategy(&document, &strategy)?;
+    /// let _ = chunks;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn chunk_with_strategy(&self, document: &Document, strategy: &dyn ChunkingStrategy) -> Result<Vec<TextChunk>> {
         let chunks = strategy.chunk(&document.content);

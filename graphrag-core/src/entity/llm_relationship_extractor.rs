@@ -270,10 +270,17 @@ Return ONLY valid JSON, nothing else."#,
     ) -> Vec<(EntityId, EntityId, String, f32)> {
         let mut relationships = Vec::new();
 
-        // Get entities that appear in this chunk
+        // Replaced mention-only filtering (missed entities without mentions):
+        //
+        // let chunk_entities: Vec<&Entity> = entities
+        //     .iter()
+        //     .filter(|e| e.mentions.iter().any(|m| m.chunk_id == chunk.id))
+        //     .collect();
+
+        let content_lower = chunk.content.to_lowercase();
         let chunk_entities: Vec<&Entity> = entities
             .iter()
-            .filter(|e| e.mentions.iter().any(|m| m.chunk_id == chunk.id))
+            .filter(|entity| content_lower.contains(&entity.name.to_lowercase()))
             .collect();
 
         // Extract relationships between co-occurring entities

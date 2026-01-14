@@ -39,12 +39,13 @@
 
 use indexmap::IndexMap;
 use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::visit::EdgeRef;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// A concept extracted from text (noun phrase or key term)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Concept {
     /// The concept text (normalized)
     pub text: String,
@@ -129,6 +130,9 @@ pub struct ConceptExtractor {
     /// Pattern for capitalized terms (potential named entities)
     capitalized_pattern: Regex,
 
+    /// Pattern for lowercase multi-word terms
+    lowercase_phrase_pattern: Regex,
+
     /// Stopwords to filter out
     stopwords: HashSet<String>,
 }
@@ -149,11 +153,17 @@ impl ConceptExtractor {
         let capitalized_pattern = Regex::new(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b")
             .expect("Invalid regex pattern");
 
+        // Lowercase multi-word phrases (e.g., "machine learning")
+        let lowercase_phrase_pattern =
+            Regex::new(r"\b[a-z][a-z]+(?:\s+[a-z][a-z]+){1,4}\b")
+                .expect("Invalid regex pattern");
+
         Self {
             min_length: config.min_length,
             max_words: config.max_words,
             noun_phrase_pattern,
             capitalized_pattern,
+            lowercase_phrase_pattern,
             stopwords: Self::default_stopwords(),
         }
     }
@@ -182,7 +192,17 @@ impl ConceptExtractor {
             }
         }
 
-        // 3. Extract important keywords (simplified TF-IDF approach)
+        // 3. Extract lowercase multi-word phrases
+        for cap in self.lowercase_phrase_pattern.captures_iter(text) {
+            if let Some(phrase) = cap.get(0) {
+                let phrase_text = phrase.as_str();
+                if self.is_valid_concept(phrase_text) {
+                    concepts.push(phrase_text.to_string());
+                }
+            }
+        }
+
+        // 4. Extract important keywords (simplified TF-IDF approach)
         let keywords = self.extract_keywords(text);
         concepts.extend(keywords);
 
@@ -238,9 +258,15 @@ impl ConceptExtractor {
         let mut keywords: Vec<_> = word_freq.into_iter().collect();
         keywords.sort_by(|a, b| b.1.cmp(&a.1));
 
-        keywords.into_iter()
+        let total_words = text.split_whitespace().count();
+        let min_frequency = if total_words <= self.max_words { 1 } else { 2 };
+
+        keywords
+            .into_iter()
             .take(20) // Top 20 keywords
-            .filter(|(_, freq)| *freq >= 2) // Must appear at least twice
+            // Replaced strict frequency threshold (blocked short queries):
+            // .filter(|(_, freq)| *freq >= 2)
+            .filter(|(_, freq)| *freq >= min_frequency)
             .map(|(word, _)| word)
             .collect()
     }

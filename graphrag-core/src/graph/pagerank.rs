@@ -89,7 +89,7 @@ impl PersonalizedPageRank {
 
         // Decide whether to use dense matrix for small graphs
         let dense_matrix = if n < config.sparse_threshold {
-            Some(Self::convert_to_dense(&adjacency_matrix))
+            Some(Self::convert_to_dense(&adjacency_matrix, &out_degrees))
         } else {
             None
         };
@@ -128,15 +128,18 @@ impl PersonalizedPageRank {
     }
 
     /// Convert sparse matrix to dense for small graphs
-    fn convert_to_dense(sparse_matrix: &CsMat<f64>) -> DMatrix<f64> {
+    fn convert_to_dense(sparse_matrix: &CsMat<f64>, out_degrees: &[f64]) -> DMatrix<f64> {
         let n = sparse_matrix.rows();
         let m = sparse_matrix.cols();
         let mut dense = DMatrix::zeros(n, m);
 
         for i in 0..n {
             if let Some(row) = sparse_matrix.outer_view(i) {
-                for (j, &value) in row.iter() {
-                    dense[(i, j)] = value;
+                let degree = out_degrees.get(i).copied().unwrap_or(0.0);
+                if degree > 0.0 {
+                    for (j, &value) in row.iter() {
+                        dense[(i, j)] = value / degree;
+                    }
                 }
             }
         }
@@ -227,8 +230,11 @@ impl PersonalizedPageRank {
             let reset_vec = DVector::from_vec(reset_vector);
 
             for _iteration in 0..self.config.max_iterations {
-                let new_scores = &reset_vec * (1.0 - self.config.damping_factor) +
-                                dense_matrix * &scores * self.config.damping_factor;
+                // Replaced forward multiplication (used P, not P^T):
+                // let new_scores = &reset_vec * (1.0 - self.config.damping_factor) +
+                //                 dense_matrix * &scores * self.config.damping_factor;
+                let new_scores = &reset_vec * (1.0 - self.config.damping_factor)
+                    + dense_matrix.transpose() * &scores * self.config.damping_factor;
 
                 let diff = (&new_scores - &scores).abs().max();
                 if diff < self.config.tolerance {
@@ -237,6 +243,9 @@ impl PersonalizedPageRank {
                 scores = new_scores;
             }
 
+            // Replaced direct mapping (un-normalized totals could drift):
+            // self.scores_to_entity_map(scores.as_slice())
+            self.normalize_scores(scores.as_mut_slice());
             self.scores_to_entity_map(scores.as_slice())
         } else {
             // Fallback to sparse computation
@@ -264,6 +273,9 @@ impl PersonalizedPageRank {
             std::mem::swap(&mut scores, &mut new_scores);
         }
 
+        // Replaced direct mapping (un-normalized totals could drift):
+        // self.scores_to_entity_map(&scores)
+        self.normalize_scores(&mut scores);
         self.scores_to_entity_map(&scores)
     }
 
@@ -300,6 +312,9 @@ impl PersonalizedPageRank {
             }
         }
 
+        // Replaced direct mapping (un-normalized totals could drift):
+        // self.scores_to_entity_map(&scores)
+        self.normalize_scores(&mut scores);
         self.scores_to_entity_map(&scores)
     }
 
@@ -387,20 +402,49 @@ impl PersonalizedPageRank {
 
     fn build_reset_vector(&self, reset_probabilities: &HashMap<EntityId, f64>) -> Result<Vec<f64>> {
         let n = self.adjacency_matrix.rows();
-        let mut reset_vector = vec![1.0 / n as f64; n]; // Default uniform distribution
+        // Replaced mixed uniform + personalized reset (could exceed total mass):
+        //
+        // let mut reset_vector = vec![1.0 / n as f64; n];
+        // if !reset_probabilities.is_empty() {
+        //     let total: f64 = reset_probabilities.values().sum();
+        //     if total > 0.0 {
+        //         for (entity_id, &prob) in reset_probabilities {
+        //             if let Some(&index) = self.node_mapping.get(entity_id) {
+        //                 if index < n {
+        //                     reset_vector[index] = prob / total;
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
-        if !reset_probabilities.is_empty() {
-            // Normalize reset probabilities to sum to 1
-            let total: f64 = reset_probabilities.values().sum();
-            if total > 0.0 {
-                for (entity_id, &prob) in reset_probabilities {
-                    if let Some(&index) = self.node_mapping.get(entity_id) {
-                        if index < n {
-                            reset_vector[index] = prob / total;
-                        }
-                    }
+        let mut reset_vector = vec![0.0; n];
+
+        if reset_probabilities.is_empty() {
+            let uniform = 1.0 / n as f64;
+            for value in reset_vector.iter_mut() {
+                *value = uniform;
+            }
+            return Ok(reset_vector);
+        }
+
+        for (entity_id, &prob) in reset_probabilities {
+            if let Some(&index) = self.node_mapping.get(entity_id) {
+                if index < n {
+                    reset_vector[index] = prob;
                 }
             }
+        }
+
+        let total: f64 = reset_vector.iter().sum();
+        if total <= 0.0 {
+            return Err(crate::core::GraphRAGError::Config {
+                message: "Reset probabilities sum to zero".to_string(),
+            });
+        }
+
+        for value in reset_vector.iter_mut() {
+            *value /= total;
         }
 
         Ok(reset_vector)
@@ -424,8 +468,8 @@ impl PersonalizedPageRank {
         // For each node j, distribute its score to its outgoing neighbors
         for (j, &current_score) in current_scores.iter().enumerate() {
             let out_degree = self.get_out_degree(j);
-            if out_degree > 0 {
-                let score_contribution = d * current_score / out_degree as f64;
+            if out_degree > 0.0 {
+                let score_contribution = d * current_score / out_degree;
 
                 // Find all neighbors of node j and add contribution
                 if let Some(row) = self.adjacency_matrix.outer_view(j) {
@@ -445,12 +489,15 @@ impl PersonalizedPageRank {
         }
     }
 
-    fn get_out_degree(&self, node_index: usize) -> usize {
-        if let Some(row) = self.adjacency_matrix.outer_view(node_index) {
-            row.nnz()
-        } else {
-            0
-        }
+    fn get_out_degree(&self, node_index: usize) -> f64 {
+        // Replaced nnz-based degree (ignored weights):
+        //
+        // if let Some(row) = self.adjacency_matrix.outer_view(node_index) {
+        //     row.nnz()
+        // } else {
+        //     0
+        // }
+        self.out_degrees.get(node_index).copied().unwrap_or(0.0)
     }
 
     fn calculate_difference(&self, scores1: &[f64], scores2: &[f64]) -> f64 {
@@ -459,6 +506,16 @@ impl PersonalizedPageRank {
             .zip(scores2.iter())
             .map(|(&a, &b)| (a - b).abs())
             .fold(0.0f64, f64::max)
+    }
+
+    fn normalize_scores(&self, scores: &mut [f64]) {
+        let total: f64 = scores.iter().sum();
+        if total <= 0.0 {
+            return;
+        }
+        for value in scores.iter_mut() {
+            *value /= total;
+        }
     }
 
     fn scores_to_entity_map(&self, scores: &[f64]) -> Result<HashMap<EntityId, f64>> {

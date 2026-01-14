@@ -318,11 +318,28 @@ impl HierarchicalCommunities {
     /// Vec of (level, community_id, summary) tuples
     ///
     /// # Example
-    /// ```no_run
+    /// ```rust,no_run
+    /// // Replaced example (missing community/graph setup):
+    /// // use graphrag_core::query::AdaptiveRoutingConfig;
+    /// //
+    /// // let config = AdaptiveRoutingConfig::default();
+    /// // let results = communities.adaptive_retrieve("AI overview", &graph, config);
     /// use graphrag_core::query::AdaptiveRoutingConfig;
+    /// use graphrag_core::graph::leiden::HierarchicalCommunities;
+    /// use petgraph::graph::Graph;
+    /// use petgraph::Undirected;
+    /// use std::collections::HashMap;
     ///
+    /// let communities = HierarchicalCommunities {
+    ///     levels: HashMap::new(),
+    ///     hierarchy: HashMap::new(),
+    ///     summaries: HashMap::new(),
+    ///     entity_mapping: None,
+    /// };
+    /// let graph: Graph<String, f32, Undirected> = Graph::new_undirected();
     /// let config = AdaptiveRoutingConfig::default();
     /// let results = communities.adaptive_retrieve("AI overview", &graph, config);
+    /// let _ = results;
     /// ```
     pub fn adaptive_retrieve(
         &self,

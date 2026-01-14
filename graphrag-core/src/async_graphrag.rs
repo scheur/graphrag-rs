@@ -115,7 +115,9 @@ impl AsyncGraphRAG {
             #[cfg(feature = "async-traits")]
             {
                 let mock_llm = crate::generation::async_mock_llm::AsyncMockLLM::new().await?;
-                self.language_model = Some(Arc::new(mock_llm));
+                // Replaced direct Arc wrapping (type mismatch):
+                // self.language_model = Some(Arc::new(mock_llm));
+                self.language_model = Some(Arc::new(Box::new(mock_llm)));
             }
             #[cfg(not(feature = "async-traits"))]
             {
@@ -562,7 +564,9 @@ impl AsyncGraphRAGBuilder {
     #[cfg(feature = "async-traits")]
     pub async fn with_async_mock_llm(mut self) -> Result<Self> {
         let mock_llm = crate::generation::async_mock_llm::AsyncMockLLM::new().await?;
-        self.language_model = Some(Arc::new(mock_llm));
+        // Replaced direct Arc wrapping (type mismatch):
+        // self.language_model = Some(Arc::new(mock_llm));
+        self.language_model = Some(Arc::new(Box::new(mock_llm)));
         Ok(self)
     }
 

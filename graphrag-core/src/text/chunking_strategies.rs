@@ -9,6 +9,7 @@ use crate::{
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 /// Global counter for generating unique chunk IDs
 static CHUNK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -78,7 +79,7 @@ impl ChunkingStrategy for HierarchicalChunkingStrategy {
 /// Wraps the existing SemanticChunker to implement ChunkingStrategy trait.
 /// This strategy uses embedding similarity to determine natural breakpoints.
 pub struct SemanticChunkingStrategy {
-    inner: SemanticChunker,
+    inner: Mutex<SemanticChunker>,
     document_id: DocumentId,
 }
 
@@ -86,7 +87,7 @@ impl SemanticChunkingStrategy {
     /// Create a new semantic chunking strategy
     pub fn new(chunker: SemanticChunker, document_id: DocumentId) -> Self {
         Self {
-            inner: chunker,
+            inner: Mutex::new(chunker),
             document_id,
         }
     }
@@ -94,26 +95,60 @@ impl SemanticChunkingStrategy {
 
 impl ChunkingStrategy for SemanticChunkingStrategy {
     fn chunk(&self, text: &str) -> Vec<TextChunk> {
-        // Note: This is a simplified implementation
-        // In a real scenario, you would need to handle the async nature of semantic chunking
-        // or use a synchronous embedding generator
+        // Replaced (fallback) sentence grouping approach:
+        //
+        // let sentences: Vec<&str> = text.split(&['.', '!', '?'][..])
+        //     .filter(|s| !s.trim().is_empty())
+        //     .collect();
+        //
+        // let mut chunks = Vec::new();
+        // let mut current_pos = 0;
+        //
+        // let chunk_size = 5; // sentences per chunk
+        // for chunk_sentences in sentences.chunks(chunk_size) {
+        //     let chunk_content = chunk_sentences.join(". ") + ".";
+        //     let chunk_id = ChunkId::new(format!("{}_{}", self.document_id,
+        //         CHUNK_COUNTER.fetch_add(1, Ordering::SeqCst)));
+        //     let chunk_start = current_pos;
+        //     let chunk_end = chunk_start + chunk_content.len();
+        //
+        //     let chunk = TextChunk::new(
+        //         chunk_id,
+        //         self.document_id.clone(),
+        //         chunk_content,
+        //         chunk_start,
+        //         chunk_end,
+        //     );
+        //     chunks.push(chunk);
+        //     current_pos = chunk_end;
+        // }
+        //
+        // chunks
 
-        // For now, fall back to a simple sentence-based approach
-        let sentences: Vec<&str> = text.split(&['.', '!', '?'][..])
-            .filter(|s| !s.trim().is_empty())
-            .collect();
+        let mut chunker = self
+            .inner
+            .lock()
+            .expect("semantic chunker mutex poisoned");
+        let (sentences, semantic_chunks) = chunker
+            .chunk_with_sentences(text)
+            .expect("semantic chunking failed");
 
+        let sentence_offsets = Self::sentence_offsets(text, &sentences);
         let mut chunks = Vec::new();
-        let mut current_pos = 0;
 
-        // Group sentences into chunks of reasonable size
-        let chunk_size = 5; // sentences per chunk
-        for chunk_sentences in sentences.chunks(chunk_size) {
-            let chunk_content = chunk_sentences.join(". ") + ".";
-            let chunk_id = ChunkId::new(format!("{}_{}", self.document_id,
-                CHUNK_COUNTER.fetch_add(1, Ordering::SeqCst)));
-            let chunk_start = current_pos;
-            let chunk_end = chunk_start + chunk_content.len();
+        for semantic_chunk in semantic_chunks {
+            let start = semantic_chunk.start_sentence;
+            let end = semantic_chunk.end_sentence.saturating_sub(1);
+
+            let (chunk_start, _) = sentence_offsets[start];
+            let (_, chunk_end) = sentence_offsets[end];
+            let chunk_content = text[chunk_start..chunk_end].to_string();
+
+            let chunk_id = ChunkId::new(format!(
+                "{}_{}",
+                self.document_id,
+                CHUNK_COUNTER.fetch_add(1, Ordering::SeqCst)
+            ));
 
             let chunk = TextChunk::new(
                 chunk_id,
@@ -123,10 +158,29 @@ impl ChunkingStrategy for SemanticChunkingStrategy {
                 chunk_end,
             );
             chunks.push(chunk);
-            current_pos = chunk_end;
         }
 
         chunks
+    }
+}
+
+impl SemanticChunkingStrategy {
+    fn sentence_offsets(text: &str, sentences: &[String]) -> Vec<(usize, usize)> {
+        let mut offsets = Vec::with_capacity(sentences.len());
+        let mut cursor = 0;
+
+        for sentence in sentences {
+            let haystack = &text[cursor..];
+            let relative_start = haystack
+                .find(sentence)
+                .unwrap_or_else(|| panic!("sentence not found in source text: {sentence}"));
+            let start = cursor + relative_start;
+            let end = start + sentence.len();
+            offsets.push((start, end));
+            cursor = end;
+        }
+
+        offsets
     }
 }
 

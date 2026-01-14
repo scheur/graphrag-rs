@@ -10,7 +10,7 @@ keywords = ["graphrag", "knowledge-graph", "rag", "llm", "ai"]
 categories = ["algorithms", "science", "text-processing"]
 
 [features]
-default = ["memory-storage", "basic-retrieval", "parallel-processing", "async", "ureq"]
+default = ["memory-storage", "basic-retrieval", "parallel-processing", "async", "async-traits", "ureq"]
 
 # Async support (enabled by default, disabled for WASM)
 async = ["tokio", "futures", "tracing"]
@@ -246,3 +246,11 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 crate-type = ["rlib", "cdylib"]  # rlib for Rust, cdylib for WASM/FFI
 
 # Benchmarks will be added later after migrating benches/ directory
+
+[[example]]
+name = "cargo_xray_metal"
+required-features = ["neural-embeddings", "metal"]
+
+[[example]]
+name = "cargo_xray_code"
+required-features = ["neural-embeddings"]

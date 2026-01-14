@@ -91,20 +91,29 @@ impl SemanticChunker {
 
     /// Split text into semantic chunks
     pub fn chunk(&mut self, text: &str) -> Result<Vec<SemanticChunk>> {
+        let (_, chunks) = self.chunk_with_sentences(text)?;
+        Ok(chunks)
+    }
+
+    /// Split text into semantic chunks, returning the sentences used to build chunks.
+    pub fn chunk_with_sentences(&mut self, text: &str) -> Result<(Vec<String>, Vec<SemanticChunk>)> {
         // 1. Split into sentences
         let sentences = self.split_sentences(text);
 
         if sentences.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         if sentences.len() == 1 {
-            return Ok(vec![SemanticChunk {
-                content: text.to_string(),
-                start_sentence: 0,
-                end_sentence: 1,
-                sentence_count: 1,
-            }]);
+            return Ok((
+                sentences.clone(),
+                vec![SemanticChunk {
+                    content: text.to_string(),
+                    start_sentence: 0,
+                    end_sentence: 1,
+                    sentence_count: 1,
+                }],
+            ));
         }
 
         // 2. Generate embeddings for each sentence
@@ -119,7 +128,7 @@ impl SemanticChunker {
         // 5. Create chunks from sentences using breakpoints
         let chunks = self.create_chunks(&sentences, &breakpoints);
 
-        Ok(chunks)
+        Ok((sentences, chunks))
     }
 
     /// Split text into sentences using simple sentence tokenization

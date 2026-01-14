@@ -20,8 +20,24 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,no_run
+//! // Replaced example (missing concept graph and index setup):
+//! // use graphrag_core::lightrag::iterative_deepening::{IterativeDeepeningSearch, SearchConfig};
+//! //
+//! // let config = SearchConfig {
+//! //     max_depth: 3,
+//! //     min_chunks: 5,
+//! //     max_chunks: 20,
+//! //     ..Default::default()
+//! // };
+//! //
+//! // let search = IterativeDeepeningSearch::new(config);
+//! // let results = search.search("machine learning", &concept_graph, &bidirectional_index);
+//! //
+//! // println!("Found {} chunks at depth {}", results.chunk_count(), results.depth_reached);
 //! use graphrag_core::lightrag::iterative_deepening::{IterativeDeepeningSearch, SearchConfig};
+//! use graphrag_core::lightrag::concept_graph::ConceptGraphBuilder;
+//! use graphrag_core::entity::BidirectionalIndex;
 //!
 //! let config = SearchConfig {
 //!     max_depth: 3,
@@ -29,6 +45,15 @@
 //!     max_chunks: 20,
 //!     ..Default::default()
 //! };
+//!
+//! let mut builder = ConceptGraphBuilder::new();
+//! builder.add_document_concepts("doc1", vec![
+//!     "machine learning".to_string(),
+//!     "neural networks".to_string(),
+//! ]);
+//! builder.add_chunk_concepts("chunk1", vec!["machine learning".to_string()]);
+//! let concept_graph = builder.build();
+//! let bidirectional_index = BidirectionalIndex::new();
 //!
 //! let search = IterativeDeepeningSearch::new(config);
 //! let results = search.search("machine learning", &concept_graph, &bidirectional_index);
@@ -39,7 +64,7 @@
 use crate::core::ChunkId;
 use crate::entity::BidirectionalIndex;
 use crate::lightrag::concept_graph::ConceptGraph;
-use crate::lightrag::query_refinement::{QueryRefiner, QueryRefinementConfig, RefinedQuery};
+use crate::lightrag::query_refinement::{QueryRefiner, QueryRefinementConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -192,7 +217,7 @@ impl IterativeDeepeningSearch {
         &self,
         depth: usize,
         concepts: &HashSet<String>,
-        concept_graph: &ConceptGraph,
+        _concept_graph: &ConceptGraph,
         bidirectional_index: &BidirectionalIndex,
         visited_chunks: &mut HashSet<ChunkId>,
     ) -> DepthResults {
@@ -338,7 +363,7 @@ pub struct SearchResults {
 }
 
 impl SearchResults {
-    fn new(query: String) -> Self {
+    pub(crate) fn new(query: String) -> Self {
         Self {
             query,
             depth_reached: 0,
@@ -350,7 +375,7 @@ impl SearchResults {
         }
     }
 
-    fn add_depth_results(&mut self, depth: usize, results: DepthResults) {
+    fn add_depth_results(&mut self, _depth: usize, results: DepthResults) {
         self.depth_results.push(results);
     }
 

@@ -28,6 +28,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(feature = "incremental")]
 use std::sync::Arc;
@@ -48,6 +49,8 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UpdateId(String);
 
+static UPDATE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 impl UpdateId {
     /// Creates a new unique update identifier
     pub fn new() -> Self {
@@ -57,10 +60,16 @@ impl UpdateId {
         }
         #[cfg(not(feature = "incremental"))]
         {
-            Self(format!(
-                "update_{}",
-                Utc::now().timestamp_nanos_opt().unwrap_or(0)
-            ))
+            // Replaced timestamp-only ID (collided in tight loops):
+            //
+            // Self(format!(
+            //     "update_{}",
+            //     Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            // ))
+
+            let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+            let counter = UPDATE_COUNTER.fetch_add(1, Ordering::SeqCst);
+            Self(format!("update_{}_{}", nanos, counter))
         }
     }
 

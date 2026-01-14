@@ -36,14 +36,24 @@ pub use traits::*;
 ///
 /// # Examples
 ///
-/// ```rust
-/// use graphrag_core::{ChunkingStrategy, TextChunk};
+/// ```rust,no_run
+/// // Replaced example (ChunkingStrategy not re-exported at crate root):
+/// // use graphrag_core::{ChunkingStrategy, TextChunk};
+/// //
+/// // struct SimpleChunker;
+/// //
+/// // impl ChunkingStrategy for SimpleChunker {
+/// //     fn chunk(&self, text: &str) -> Vec<TextChunk> {
+/// //         vec![]
+/// //     }
+/// // }
+/// use graphrag_core::core::ChunkingStrategy;
+/// use graphrag_core::TextChunk;
 ///
 /// struct SimpleChunker;
 ///
 /// impl ChunkingStrategy for SimpleChunker {
-///     fn chunk(&self, text: &str) -> Vec<TextChunk> {
-///         // Simple implementation
+///     fn chunk(&self, _text: &str) -> Vec<TextChunk> {
 ///         vec![]
 ///     }
 /// }
@@ -134,6 +144,12 @@ impl From<EntityId> for String {
     }
 }
 
+impl AsRef<str> for EntityId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Unique identifier for text chunks
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ChunkId(pub String);
@@ -160,6 +176,12 @@ impl From<String> for ChunkId {
 impl From<ChunkId> for String {
     fn from(id: ChunkId) -> Self {
         id.0
+    }
+}
+
+impl AsRef<str> for ChunkId {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 

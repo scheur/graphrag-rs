@@ -20,15 +20,40 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,no_run
+//! // Replaced example (missing concept graph and index setup):
+//! // use graphrag_core::lightrag::query_refinement::{QueryRefiner, QueryRefinementConfig};
+//! // use graphrag_core::lightrag::concept_graph::ConceptGraph;
+//! // use graphrag_core::entity::BidirectionalIndex;
+//! //
+//! // let config = QueryRefinementConfig::default();
+//! // let refiner = QueryRefiner::new(config);
+//! //
+//! // let refined = refiner.refine_query(
+//! //     "machine learning applications",
+//! //     &concept_graph,
+//! //     &bidirectional_index,
+//! // );
+//! //
+//! // println!("Original: {}", refined.original_query);
+//! // println!("Expanded: {:?}", refined.expanded_concepts);
+//! // println!("Relevant chunks: {}", refined.relevant_chunk_ids.len());
 //! use graphrag_core::lightrag::query_refinement::{QueryRefiner, QueryRefinementConfig};
-//! use graphrag_core::lightrag::concept_graph::ConceptGraph;
+//! use graphrag_core::lightrag::concept_graph::ConceptGraphBuilder;
 //! use graphrag_core::entity::BidirectionalIndex;
 //!
 //! let config = QueryRefinementConfig::default();
 //! let refiner = QueryRefiner::new(config);
 //!
-//! // Refine query using concept graph and index
+//! let mut builder = ConceptGraphBuilder::new();
+//! builder.add_document_concepts("doc1", vec![
+//!     "machine learning".to_string(),
+//!     "neural networks".to_string(),
+//! ]);
+//! builder.add_chunk_concepts("chunk1", vec!["machine learning".to_string()]);
+//! let concept_graph = builder.build();
+//! let bidirectional_index = BidirectionalIndex::new();
+//!
 //! let refined = refiner.refine_query(
 //!     "machine learning applications",
 //!     &concept_graph,
@@ -316,10 +341,10 @@ impl QueryRefiner {
     /// Denormalize EntityId back to concept
     fn denormalize_entity_id(&self, entity_id: &EntityId) -> String {
         // Extract concept from entity ID (remove prefix if present)
-        let id_str = entity_id.as_str();
+        let id_str = entity_id.as_ref();
         id_str
             .split('_')
-            .skip_while(|part| part.to_uppercase() == *part) // Skip entity type prefix
+            .skip_while(|part: &&str| part.to_uppercase() == *part) // Skip entity type prefix
             .collect::<Vec<_>>()
             .join("_")
     }

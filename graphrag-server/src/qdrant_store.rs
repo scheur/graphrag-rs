@@ -308,9 +308,8 @@ impl QdrantStore {
             .and_then(|c| c.points_count)
             .unwrap_or(0) as usize;
 
-        let vectors = info.result.as_ref()
-            .and_then(|c| c.vectors_count)
-            .unwrap_or(0) as usize;
+        // vectors_count removed in newer qdrant-client, use points_count
+        let vectors = count;
 
         Ok((count, vectors))
     }

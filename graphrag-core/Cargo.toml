@@ -89,7 +89,7 @@ cross-encoder = []
 code-chunking = ["tree-sitter", "tree-sitter-rust"]
 
 # Neural embeddings feature
-neural-embeddings = ["dirs", "candle-core", "candle-nn", "candle-transformers"]
+neural-embeddings = ["dirs", "candle-core", "candle-nn", "candle-transformers", "tokenizers", "huggingface-hub", "tracing"]
 
 # Hugging Face Hub integration for downloading models
 huggingface-hub = ["hf-hub", "dirs"]
@@ -103,7 +103,7 @@ ollama = ["ollama-rs", "async"]        # Ollama LLM support (requires async)
 # Platform-specific features
 wasm = ["wasm-bindgen", "web-sys", "js-sys", "serde-wasm-bindgen", "getrandom"] # Browser WASM compatibility
 cuda = ["neural-embeddings", "candle-core/cuda"] # NVIDIA GPU acceleration
-metal = ["neural-embeddings", "candle-core/metal"] # Apple Silicon GPU (only on macOS)
+metal = ["neural-embeddings", "candle-core/metal", "candle-nn/metal"] # Apple Silicon GPU (only on macOS)
 # webgpu = [] # WebGPU acceleration (WASM) - DISABLED due to Metal/objc build issues
 
 [dependencies]
@@ -197,6 +197,7 @@ tap = { workspace = true, optional = true }
 candle-core = { workspace = true, optional = true }
 candle-nn = { workspace = true, optional = true }
 candle-transformers = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
 
 # GPU acceleration (optional)
 # TEMPORARILY DISABLED: burn and burn-wgpu cause Metal/objc build issues on Linux
@@ -207,7 +208,7 @@ candle-transformers = { workspace = true, optional = true }
 dirs = { version = "5.0", optional = true }
 
 # Hugging Face Hub client
-hf-hub = { version = "0.3", optional = true, default-features = false, features = ["tokio", "online"] }
+hf-hub = { version = "0.4.3", optional = true, default-features = false, features = ["tokio", "default-tls", "ureq"] }
 
 # Code parsing for structured chunking
 tree-sitter = { version = "0.22", optional = true }
@@ -239,6 +240,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 pretty_assertions = "1.4"
 proptest = "1.4"
 tempfile = "3.8"
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [lib]
 crate-type = ["rlib", "cdylib"]  # rlib for Rust, cdylib for WASM/FFI

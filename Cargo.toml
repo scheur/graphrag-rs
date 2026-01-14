@@ -79,6 +79,7 @@ lru = "0.12"
 # Text processing
 text_analysis = "0.3"
 regex = "1.0"
+tokenizers = { version = "0.20.4", default-features = false, features = ["onig"] }
 
 # Utilities
 sha2 = "0.10"
@@ -126,10 +127,10 @@ arrow = "56"
 arrow-array = "56"
 arrow-schema = "56"
 
-# ML frameworks (optional, for neural embeddings)
-candle-core = { version = "0.8", default-features = false }
-candle-nn = { version = "0.8", default-features = false }
-candle-transformers = { version = "0.8", default-features = false }
+# ML frameworks - using fork with Metal layer-norm (PR #3150)
+candle-core = { git = "https://github.com/rish2jain/candle.git", rev = "15c0b79", default-features = false }
+candle-nn = { git = "https://github.com/rish2jain/candle.git", rev = "15c0b79", default-features = false }
+candle-transformers = { git = "https://github.com/rish2jain/candle.git", rev = "15c0b79", default-features = false }
 
 [profile.release]
 opt-level = 3

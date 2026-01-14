@@ -12,6 +12,8 @@ use crate::embeddings::{EmbeddingConfig, EmbeddingProvider};
 #[cfg(feature = "huggingface-hub")]
 use hf_hub::api::sync::{Api, ApiBuilder};
 
+const HF_ENDPOINT: &str = "https://huggingface.co";
+
 /// Hugging Face Hub embedding provider
 pub struct HuggingFaceEmbeddings {
     model_id: String,
@@ -67,19 +69,14 @@ impl HuggingFaceEmbeddings {
     async fn download_model(&mut self) -> Result<std::path::PathBuf> {
         use std::path::PathBuf;
 
-        // Initialize API with optional custom cache directory
-        let api = if let Some(ref cache_dir) = self.cache_dir {
-            ApiBuilder::new()
-                .with_cache_dir(PathBuf::from(cache_dir))
-                .build()
-                .map_err(|e| GraphRAGError::Embedding {
-                    message: format!("Failed to create HF Hub API with cache dir: {}", e),
-                })?
-        } else {
-            Api::new().map_err(|e| GraphRAGError::Embedding {
-                message: format!("Failed to create HF Hub API: {}", e),
-            })?
-        };
+        // Initialize API with optional custom cache directory and explicit endpoint
+        let mut builder = ApiBuilder::new().with_endpoint(HF_ENDPOINT.to_string());
+        if let Some(ref cache_dir) = self.cache_dir {
+            builder = builder.with_cache_dir(PathBuf::from(cache_dir));
+        }
+        let api = builder.build().map_err(|e| GraphRAGError::Embedding {
+            message: format!("Failed to create HF Hub API: {}", e),
+        })?;
 
         // Get model repository
         let repo = api.model(self.model_id.clone());

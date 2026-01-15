@@ -1,0 +1,58 @@
+# GraphRAG Configuration for mighty-wings Monorepo
+# Usage: cargo run -p graphrag-core --example mighty_wings_graphrag --features "metal,leiden" --release -- --config examples/mighty_wings_config.toml
+
+[source]
+root = "/Users/scheur/dev/Github/mighty-wings"
+max_files = 5000
+max_file_bytes = 524288  # 512KB
+
+[source.include_dirs]
+# Build targets from build-parallel.sh
+services = ["apps/wings-api-gateway", "crates/wings-shadow", "crates/ooxml-rust-sdk"]
+mcp = ["services/wingsai-mcp", "crates/busdev-wings/crates/busdev-mcp"]
+web = ["crates/mighty-wings-web", "crates/fin-engine-wings"]
+data = ["crates/economic-stats-extractor"]
+frontend = ["apps/wings-frontend", "apps/wings-landing", "crates/wings-frontend-ai"]
+ios = ["apps/wingsai-ios"]
+infra = ["crates/mighty-wings-proto", "crates/wings-config", "crates/wings-runtime"]
+grpc = ["services/graphrag-grpc-service"]
+
+[source.exclude_patterns]
+directories = ["wings-eyes", "target", "node_modules", "build", ".next", "refs", ".git", "dist", ".cache", "vendor", "tmp"]
+files = ["*.xcresult", "*.pptx", "*.zip", "*.png", "*.jpg", "*.wasm", "*.lock"]
+
+[source.extensions]
+rust = [".rs", ".toml"]
+typescript = [".ts", ".tsx", ".svelte"]
+swift = [".swift"]
+docs = [".md"]
+
+[embeddings]
+backend = "candle"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+use_metal = true
+batch_size = 32
+
+[entities]
+# Code-aware entity types for Rust
+types = ["FUNCTION", "STRUCT", "ENUM", "TRAIT", "IMPL", "MODULE", "CRATE", "TYPE", "CONST", "MACRO"]
+# Additional for TypeScript/Swift
+extended_types = ["CLASS", "INTERFACE", "PROTOCOL", "EXTENSION", "COMPONENT"]
+
+[graph]
+extract_relationships = true
+enable_leiden = true
+leiden_resolution = 1.0
+community_levels = 3
+
+[output]
+dir = "/Users/scheur/dev/Github/mighty-wings/target/graphrag"
+graph_file = "graph.json"
+communities_file = "communities.json"
+
+[qdrant]
+url = "http://localhost:6334"
+collection = "mighty-wings-graphrag"
+dimension = 384  # all-MiniLM-L6-v2 output dimension
+# Will create collection if it doesn't exist
+# Stores: chunk embeddings, entity embeddings, metadata

@@ -241,6 +241,7 @@ pretty_assertions = "1.4"
 proptest = "1.4"
 tempfile = "3.8"
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+qdrant-client = { workspace = true }  # For mighty_wings_graphrag example
 
 [lib]
 crate-type = ["rlib", "cdylib"]  # rlib for Rust, cdylib for WASM/FFI
@@ -254,3 +255,7 @@ required-features = ["neural-embeddings", "metal"]
 [[example]]
 name = "cargo_xray_code"
 required-features = ["neural-embeddings"]
+
+[[example]]
+name = "mighty_wings_graphrag"
+required-features = ["neural-embeddings", "async"]

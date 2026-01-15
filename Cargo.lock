@@ -4249,7 +4249,7 @@ dependencies = [
 
 [[package]]
 name = "graphrag-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "clap",
@@ -4276,7 +4276,7 @@ dependencies = [
 
 [[package]]
 name = "graphrag-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrow 52.2.0",
  "async-trait",
@@ -4315,6 +4315,7 @@ dependencies = [
  "petgraph 0.6.5",
  "pretty_assertions",
  "proptest",
+ "qdrant-client",
  "rand 0.8.5",
  "rayon",
  "redis",
@@ -4348,7 +4349,7 @@ dependencies = [
 
 [[package]]
 name = "graphrag-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -4381,7 +4382,7 @@ dependencies = [
 
 [[package]]
 name = "graphrag-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.3.4",

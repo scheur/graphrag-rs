@@ -27,7 +27,7 @@ use hf_hub::api::tokio::ApiBuilder;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokenizers::{Tokenizer, TruncationParams};
+use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
 
 type Result<T> = std::result::Result<T, GraphRAGError>;
 const HF_ENDPOINT: &str = "https://huggingface.co";
@@ -405,30 +405,102 @@ impl EmbeddingProvider for CandleEmbedder {
     }
     
     async fn embed_batch(&self, texts: &[&str]) -> std::result::Result<Vec<Vec<f32>>, GraphRAGError> {
-        let model = self
-            .model
-            .read()
-            .await
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| GraphRAGError::VectorSearch {
-                message: "Model not initialized".to_string(),
-            })?;
-        let tokenizer = self
-            .tokenizer
-            .read()
-            .await
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| GraphRAGError::VectorSearch {
-                message: "Tokenizer not initialized".to_string(),
-            })?;
-
-        let mut results = Vec::with_capacity(texts.len());
-        for text in texts {
-            results.push(self.embed_internal(text, model.as_ref(), tokenizer.as_ref())?);
+        if texts.is_empty() {
+            return Ok(Vec::new());
         }
-
+        
+        // For very small batches, use sequential embedding (less overhead)
+        if texts.len() <= 2 {
+            let model = self.model.read().await.as_ref().cloned()
+                .ok_or_else(|| GraphRAGError::VectorSearch { message: "Model not initialized".to_string() })?;
+            let tokenizer = self.tokenizer.read().await.as_ref().cloned()
+                .ok_or_else(|| GraphRAGError::VectorSearch { message: "Tokenizer not initialized".to_string() })?;
+            let mut results = Vec::with_capacity(texts.len());
+            for text in texts {
+                results.push(self.embed_internal(text, model.as_ref(), tokenizer.as_ref())?);
+            }
+            return Ok(results);
+        }
+        
+        // True batch embedding for larger batches
+        let model = self.model.read().await.as_ref().cloned()
+            .ok_or_else(|| GraphRAGError::VectorSearch { message: "Model not initialized".to_string() })?;
+        let tokenizer_arc = self.tokenizer.read().await.as_ref().cloned()
+            .ok_or_else(|| GraphRAGError::VectorSearch { message: "Tokenizer not initialized".to_string() })?;
+        
+        // Clone and configure tokenizer with padding for batch processing
+        let mut tokenizer = (*tokenizer_arc).clone();
+        tokenizer.with_padding(Some(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            pad_id: 0,
+            pad_token: "[PAD]".to_string(),
+            ..Default::default()
+        }));
+        
+        // Batch tokenize all texts at once
+        let encodings = tokenizer.encode_batch(texts.to_vec(), true).map_err(tokenizer_err)?;
+        
+        let batch_size = encodings.len();
+        if batch_size == 0 {
+            return Ok(Vec::new());
+        }
+        
+        // Find max sequence length in batch (with padding, all should be same)
+        let seq_len = encodings[0].get_ids().len();
+        
+        // Build batched tensors: (batch_size, seq_len)
+        let mut all_input_ids = Vec::with_capacity(batch_size * seq_len);
+        let mut all_token_type_ids = Vec::with_capacity(batch_size * seq_len);
+        let mut all_attention_mask = Vec::with_capacity(batch_size * seq_len);
+        
+        for encoding in &encodings {
+            let ids = encoding.get_ids();
+            let mask = encoding.get_attention_mask();
+            let type_ids = encoding.get_type_ids();
+            
+            if ids.len() != seq_len {
+                return Err(GraphRAGError::VectorSearch {
+                    message: format!("Sequence length mismatch: expected {}, got {}", seq_len, ids.len()),
+                });
+            }
+            
+            all_input_ids.extend_from_slice(ids);
+            all_attention_mask.extend_from_slice(mask);
+            if type_ids.len() == seq_len {
+                all_token_type_ids.extend_from_slice(type_ids);
+            } else {
+                all_token_type_ids.extend(std::iter::repeat(0u32).take(seq_len));
+            }
+        }
+        
+        // Create tensors with shape (batch_size, seq_len)
+        let input_ids = Tensor::new(all_input_ids.as_slice(), &self.device)
+            .map_err(candle_err)?
+            .reshape((batch_size, seq_len))
+            .map_err(candle_err)?;
+        let token_type_ids = Tensor::new(all_token_type_ids.as_slice(), &self.device)
+            .map_err(candle_err)?
+            .reshape((batch_size, seq_len))
+            .map_err(candle_err)?;
+        let attention_mask = Tensor::new(all_attention_mask.as_slice(), &self.device)
+            .map_err(candle_err)?
+            .reshape((batch_size, seq_len))
+            .map_err(candle_err)?;
+        
+        // Single forward pass for entire batch!
+        let embeddings = model.forward(&input_ids, &token_type_ids, Some(&attention_mask)).map_err(candle_err)?;
+        
+        // Mean pooling and normalization (works on batched tensors)
+        let pooled = self.mean_pooling(&embeddings, &attention_mask)?;
+        let normalized = self.normalize(&pooled)?;
+        
+        // Extract individual embeddings from batch result
+        let mut results = Vec::with_capacity(batch_size);
+        for i in 0..batch_size {
+            let embedding = normalized.get(i).map_err(candle_err)?.to_vec1::<f32>().map_err(candle_err)?;
+            results.push(embedding);
+        }
+        
         Ok(results)
     }
     

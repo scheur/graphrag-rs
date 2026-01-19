@@ -736,26 +736,47 @@ async fn main() -> Result<()> {
         .knowledge_graph_mut()
         .ok_or(GraphRAGError::NotInitialized)?;
 
-    // Embed chunks
-    println!("      Embedding {} chunks...", graph.chunks().count());
+
+    // Embed chunks in batches
+    const EMBEDDING_BATCH_SIZE: usize = 32;
     let chunk_count = graph.chunks().count();
-    for (idx, chunk) in graph.chunks_mut().enumerate() {
-        let embedding = embedder.embed(&chunk.content).await?;
-        chunk.embedding = Some(embedding);
-        if (idx + 1) % 500 == 0 || idx + 1 == chunk_count {
-            println!("      [{}/{}] chunks embedded...", idx + 1, chunk_count);
+    println!("      Embedding {} chunks in batches of {}...", chunk_count, EMBEDDING_BATCH_SIZE);
+    let chunk_contents: Vec<String> = graph.chunks().map(|c| c.content.clone()).collect();
+
+    for batch_start in (0..chunk_count).step_by(EMBEDDING_BATCH_SIZE) {
+        let batch_end = (batch_start + EMBEDDING_BATCH_SIZE).min(chunk_count);
+        let batch_texts: Vec<&str> = chunk_contents[batch_start..batch_end].iter().map(|s| s.as_str()).collect();
+
+        let embeddings = embedder.embed_batch(&batch_texts).await?;
+        for (i, embedding) in embeddings.into_iter().enumerate() {
+            if let Some(chunk) = graph.chunks_mut().nth(batch_start + i) {
+                chunk.embedding = Some(embedding);
+            }
+        }
+
+        if batch_end % 500 == 0 || batch_end == chunk_count {
+            println!("      [{}/{}] chunks embedded...", batch_end, chunk_count);
         }
     }
 
-    // Embed entities
-    println!("      Embedding {} entities...", graph.entities().count());
+    // Embed entities in batches
     let entity_count = graph.entities().count();
-    for (idx, entity) in graph.entities_mut().enumerate() {
-        let text = format!("{} {}", entity.name, entity.entity_type);
-        let embedding = embedder.embed(&text).await?;
-        entity.embedding = Some(embedding);
-        if (idx + 1) % 500 == 0 || idx + 1 == entity_count {
-            println!("      [{}/{}] entities embedded...", idx + 1, entity_count);
+    println!("      Embedding {} entities in batches of {}...", entity_count, EMBEDDING_BATCH_SIZE);
+    let entity_texts: Vec<String> = graph.entities().map(|e| format!("{} {}", e.name, e.entity_type)).collect();
+
+    for batch_start in (0..entity_count).step_by(EMBEDDING_BATCH_SIZE) {
+        let batch_end = (batch_start + EMBEDDING_BATCH_SIZE).min(entity_count);
+        let batch_texts: Vec<&str> = entity_texts[batch_start..batch_end].iter().map(|s| s.as_str()).collect();
+
+        let embeddings = embedder.embed_batch(&batch_texts).await?;
+        for (i, embedding) in embeddings.into_iter().enumerate() {
+            if let Some(entity) = graph.entities_mut().nth(batch_start + i) {
+                entity.embedding = Some(embedding);
+            }
+        }
+
+        if batch_end % 500 == 0 || batch_end == entity_count {
+            println!("      [{}/{}] entities embedded...", batch_end, entity_count);
         }
     }
 

@@ -4331,7 +4331,7 @@ dependencies = [
  "tempfile",
  "text-splitter",
  "text_analysis",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "tokenizers",
  "tokio",
  "toml 0.8.23",
@@ -4373,7 +4373,7 @@ dependencies = [
  "redis",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -10569,6 +10569,7 @@ dependencies = [
  "getrandom 0.3.4",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

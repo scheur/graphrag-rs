@@ -430,7 +430,7 @@ pub enum StopReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lightrag::concept_graph::{ConceptGraphBuilder, ConceptExtractor};
+    use crate::lightrag::concept_graph::ConceptGraphBuilder;
 
     #[test]
     fn test_iterative_deepening_basic() {

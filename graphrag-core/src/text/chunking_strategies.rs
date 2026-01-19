@@ -313,10 +313,10 @@ mod tests {
 
     #[test]
     fn test_semantic_chunking_strategy() {
-        let document_id = DocumentId::new("test_doc".to_string());
+        let _document_id = DocumentId::new("test_doc".to_string());
         // Note: In a real test, you would create a proper SemanticChunker
         // For now, we'll use a mock approach
-        let config = crate::text::semantic_chunking::SemanticChunkerConfig::default();
+        let _config = crate::text::semantic_chunking::SemanticChunkerConfig::default();
         // We can't easily create a mock embedding generator here, so skip the test
         // let embedding_gen = crate::vector::EmbeddingGenerator::mock();
         // let chunker = SemanticChunker::new(config, embedding_gen);

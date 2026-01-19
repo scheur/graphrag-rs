@@ -556,19 +556,34 @@ impl KnowledgeGraph {
 
     /// Save knowledge graph to JSON file with optimized format for entities and relationships
     pub fn save_to_json(&self, file_path: &str) -> Result<()> {
+        self.save_to_json_with_reports(file_path, None)
+    }
+
+    /// Save knowledge graph to JSON file with optional community reports
+    ///
+    /// # Arguments
+    /// * `file_path` - Path to save the JSON file
+    /// * `reports` - Optional community reports to include in output
+    pub fn save_to_json_with_reports(
+        &self,
+        file_path: &str,
+        reports: Option<&crate::graph::CommunityReports>,
+    ) -> Result<()> {
         use std::fs;
 
         // Create optimized JSON structure based on 2024 best practices
         let mut json_data = json::JsonValue::new_object();
 
         // Add metadata
+        let report_count = reports.map(|r| r.len()).unwrap_or(0);
         json_data["metadata"] = json::object! {
             "format_version" => "2.0",
             "created_at" => chrono::Utc::now().to_rfc3339(),
             "total_entities" => self.entities().count(),
             "total_relationships" => self.get_all_relationships().len(),
             "total_chunks" => self.chunks().count(),
-            "total_documents" => self.documents().count()
+            "total_documents" => self.documents().count(),
+            "total_community_reports" => report_count
         };
 
         // Add entities with enhanced information
@@ -671,6 +686,44 @@ impl KnowledgeGraph {
             documents_array.push(doc_obj).unwrap();
         }
         json_data["documents"] = documents_array;
+
+        // Add community reports if provided
+        if let Some(community_reports) = reports {
+            let mut reports_array = json::JsonValue::new_array();
+            for report in &community_reports.reports {
+                let mut findings_array = json::JsonValue::new_array();
+                for finding in &report.findings {
+                    findings_array
+                        .push(json::object! {
+                            "summary" => finding.summary.clone(),
+                            "explanation" => finding.explanation.clone()
+                        })
+                        .unwrap();
+                }
+
+                let entity_ids: Vec<String> = report.entity_ids.clone();
+
+                let report_obj = json::object! {
+                    "id" => report.id.clone(),
+                    "community_id" => report.community_id,
+                    "level" => report.level,
+                    "title" => report.title.clone(),
+                    "summary" => report.summary.clone(),
+                    "full_content" => report.full_content.clone(),
+                    "rank" => report.rank,
+                    "rating_explanation" => report.rating_explanation.clone(),
+                    "findings" => findings_array,
+                    "entity_ids" => entity_ids,
+                    "size" => report.size
+                };
+                reports_array.push(report_obj).unwrap();
+            }
+            json_data["community_reports"] = reports_array;
+            tracing::info!(
+                "Including {} community reports in output",
+                community_reports.len()
+            );
+        }
 
         // Save to file
         fs::write(file_path, json_data.dump())?;

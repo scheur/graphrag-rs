@@ -27,6 +27,9 @@ pub mod pagerank;
 #[cfg(feature = "leiden")]
 pub mod leiden;
 
+// Community reports for Microsoft GraphRAG-compatible output
+pub mod community_report;
+
 #[cfg(feature = "async")]
 pub use incremental::{
     ConflictStrategy, IncrementalGraphManager, IncrementalStatistics,
@@ -58,6 +61,12 @@ pub use pagerank::{MultiModalScores, PageRankConfig, PersonalizedPageRank, Score
 #[cfg(feature = "leiden")]
 pub use leiden::{
     EntityMetadata, HierarchicalCommunities, LeidenConfig, LeidenCommunityDetector,
+};
+
+// Community report exports (always available)
+pub use community_report::{
+    CommunityInput, CommunityReport, CommunityReportConfig, CommunityReportGenerator,
+    CommunityReports, Finding, COMMUNITY_REPORT_PROMPT, CODE_COMMUNITY_REPORT_PROMPT,
 };
 
 /// Graph builder for constructing knowledge graphs from documents

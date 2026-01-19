@@ -342,10 +342,10 @@ impl LanguageDetector {
                 "ceci" | "est" | "texte" | "francais" | "français" => {
                     *boosts.entry(Language::French).or_insert(0.0) += 0.4;
                 }
-                "dies" | "ist" | "text" | "deutsch" => {
+                "dies" | "ist" | "dieser" | "deutsch" => {
                     *boosts.entry(Language::German).or_insert(0.0) += 0.3;
                 }
-                "este" | "texto" | "portugues" | "português" => {
+                "este" | "um" | "portugues" | "português" => {
                     *boosts.entry(Language::Portuguese).or_insert(0.0) += 0.3;
                 }
                 _ => {}

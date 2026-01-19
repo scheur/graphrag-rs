@@ -471,7 +471,7 @@ impl StringSimilarityLinker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{ChunkId, DocumentId, EntityMention};
+    use crate::core::{ChunkId, EntityMention};
 
     #[test]
     fn test_levenshtein_distance() {

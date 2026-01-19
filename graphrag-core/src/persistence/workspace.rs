@@ -323,48 +323,66 @@ impl WorkspaceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_temp_dir(test_name: &str) -> std::path::PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("graphrag_test_{}_{}", test_name, timestamp));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn cleanup_temp_dir(dir: &std::path::Path) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn test_workspace_manager_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let workspace = WorkspaceManager::new(temp_dir.path()).unwrap();
+        let temp_dir = create_temp_dir("manager_creation");
+        let workspace = WorkspaceManager::new(&temp_dir).unwrap();
         assert!(workspace.base_dir.exists());
+        cleanup_temp_dir(&temp_dir);
     }
 
     #[test]
     fn test_create_and_list_workspaces() {
-        let temp_dir = TempDir::new().unwrap();
-        let workspace = WorkspaceManager::new(temp_dir.path()).unwrap();
+        let temp_dir = create_temp_dir("create_list");
+        let workspace = WorkspaceManager::new(&temp_dir).unwrap();
 
         workspace.create_workspace("test1").unwrap();
         workspace.create_workspace("test2").unwrap();
 
         let workspaces = workspace.list_workspaces().unwrap();
         assert_eq!(workspaces.len(), 2);
+        cleanup_temp_dir(&temp_dir);
     }
 
     #[test]
     fn test_delete_workspace() {
-        let temp_dir = TempDir::new().unwrap();
-        let workspace = WorkspaceManager::new(temp_dir.path()).unwrap();
+        let temp_dir = create_temp_dir("delete");
+        let workspace = WorkspaceManager::new(&temp_dir).unwrap();
 
         workspace.create_workspace("test").unwrap();
         assert!(workspace.workspace_exists("test"));
 
         workspace.delete_workspace("test").unwrap();
         assert!(!workspace.workspace_exists("test"));
+        cleanup_temp_dir(&temp_dir);
     }
 
     #[test]
     fn test_save_and_load_graph() {
-        let temp_dir = TempDir::new().unwrap();
-        let workspace = WorkspaceManager::new(temp_dir.path()).unwrap();
+        let temp_dir = create_temp_dir("save_load");
+        let workspace = WorkspaceManager::new(&temp_dir).unwrap();
 
         let graph = KnowledgeGraph::new();
         workspace.save_graph(&graph, "test").unwrap();
 
         let loaded_graph = workspace.load_graph("test").unwrap();
         assert_eq!(loaded_graph.entity_count(), 0);
+        cleanup_temp_dir(&temp_dir);
     }
 }

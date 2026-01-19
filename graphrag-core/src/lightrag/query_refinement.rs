@@ -414,7 +414,7 @@ impl RefinedQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lightrag::concept_graph::{ConceptGraphBuilder, ConceptExtractor};
+    use crate::lightrag::concept_graph::ConceptGraphBuilder;
 
     #[test]
     fn test_query_refinement_basic() {

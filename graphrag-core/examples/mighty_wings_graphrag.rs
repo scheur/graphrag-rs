@@ -19,6 +19,7 @@
 //!     --root /Users/scheur/dev/Github/mighty-wings \
 //!     --output /Users/scheur/dev/Github/mighty-wings/target/graphrag
 
+use futures::StreamExt;
 use graphrag_core::core::error::{GraphRAGError, Result};
 use graphrag_core::embeddings::{neural::CandleEmbedder, EmbeddingProvider};
 use graphrag_core::nlp::custom_ner::{CustomNER, EntityType, ExtractionRule, RuleType};
@@ -31,8 +32,10 @@ use qdrant_client::Qdrant;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use tracing_subscriber::EnvFilter;
+use uuid::Uuid;
 
 // =============================================================================
 // Configuration
@@ -41,6 +44,21 @@ use tracing_subscriber::EnvFilter;
 const MAX_FILE_BYTES: u64 = 512 * 1024; // 512KB
 const MAX_FILES: usize = 5000;
 const MODEL_ID: &str = "sentence-transformers/all-MiniLM-L6-v2";
+
+/// Namespace UUID for GraphRAG point IDs (DNS namespace from RFC 4122)
+const GRAPHRAG_NAMESPACE: Uuid = uuid::uuid!("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+
+/// Generate deterministic UUID for a chunk (idempotent across re-runs)
+fn chunk_id(file_path: &str, chunk_index: usize) -> String {
+    let input = format!("chunk:{}:{}", file_path, chunk_index);
+    Uuid::new_v5(&GRAPHRAG_NAMESPACE, input.as_bytes()).to_string()
+}
+
+/// Generate deterministic UUID for an entity (idempotent across re-runs)
+fn entity_id(name: &str, entity_type: &str) -> String {
+    let input = format!("entity:{}:{}", name, entity_type);
+    Uuid::new_v5(&GRAPHRAG_NAMESPACE, input.as_bytes()).to_string()
+}
 
 /// Directories to always skip
 const SKIP_DIRS: &[&str] = &[
@@ -421,68 +439,141 @@ async fn setup_qdrant(url: &str, collection: &str) -> std::result::Result<Qdrant
     Ok(client)
 }
 
-/// Upsert chunk embeddings to Qdrant
-async fn upsert_chunks(
+/// Upsert chunk embeddings to Qdrant with streaming (memory-efficient for large datasets)
+async fn upsert_chunks_streaming(
     client: &Qdrant,
     collection: &str,
-    chunks: Vec<(String, Vec<f32>, String, String, usize)>, // (id, embedding, file_path, content_preview, chunk_index)
+    chunks: impl Iterator<Item = (usize, &graphrag_core::core::TextChunk)>,
+    total: usize,
 ) -> std::result::Result<usize, String> {
-    let points: Vec<PointStruct> = chunks
-        .into_iter()
-        .map(|(id, embedding, file_path, content, chunk_index)| {
-            let mut payload = HashMap::new();
-            payload.insert("file_path".to_string(), QdrantValue::from(file_path));
-            payload.insert("content".to_string(), QdrantValue::from(content.chars().take(500).collect::<String>()));
-            payload.insert("chunk_index".to_string(), QdrantValue::from(chunk_index as i64));
-            payload.insert("type".to_string(), QdrantValue::from("chunk"));
+    let counter = AtomicUsize::new(0);
+    let collection = collection.to_string();
 
-            PointStruct::new(id, embedding, payload)
+    // Collect chunks into tuples with UUIDv5 IDs
+    let chunk_tuples: Vec<_> = chunks
+        .filter_map(|(idx, chunk)| {
+            chunk.embedding.as_ref().map(|emb| {
+                let file_path = chunk
+                    .content
+                    .lines()
+                    .next()
+                    .and_then(|l| l.strip_prefix("// file: "))
+                    .unwrap_or("unknown")
+                    .to_string();
+                let id = chunk_id(&file_path, idx);
+                (id, emb.clone(), file_path, chunk.content.clone(), idx)
+            })
         })
         .collect();
 
-    let count = points.len();
+    let total_chunks = chunk_tuples.len();
 
-    // Upsert in batches of 100
-    for batch in points.chunks(100) {
-        client
-            .upsert_points(UpsertPointsBuilder::new(collection, batch.to_vec()))
-            .await
-            .map_err(|e| format!("Failed to upsert chunks: {}", e))?;
-    }
+    // Stream in batches of 100 with 4 concurrent uploads
+    futures::stream::iter(chunk_tuples)
+        .chunks(100)
+        .for_each_concurrent(4, |batch| {
+            let client = client;
+            let collection = &collection;
+            let counter = &counter;
+            async move {
+                let points: Vec<PointStruct> = batch
+                    .into_iter()
+                    .map(|(id, embedding, file_path, content, chunk_index)| {
+                        let mut payload = HashMap::new();
+                        payload.insert("file_path".to_string(), QdrantValue::from(file_path));
+                        payload.insert(
+                            "content".to_string(),
+                            QdrantValue::from(content.chars().take(500).collect::<String>()),
+                        );
+                        payload.insert("chunk_index".to_string(), QdrantValue::from(chunk_index as i64));
+                        payload.insert("type".to_string(), QdrantValue::from("chunk"));
+                        PointStruct::new(id, embedding, payload)
+                    })
+                    .collect();
 
-    Ok(count)
+                let batch_size = points.len();
+                if let Err(e) = client
+                    .upsert_points(UpsertPointsBuilder::new(collection, points))
+                    .await
+                {
+                    eprintln!("      Batch upload failed: {}", e);
+                }
+                let count = counter.fetch_add(batch_size, Ordering::SeqCst) + batch_size;
+                if count % 1000 < 100 || count == total {
+                    println!("      [{}/{}] chunks uploaded...", count, total);
+                }
+            }
+        })
+        .await;
+
+    Ok(total_chunks)
 }
 
-/// Upsert entity embeddings to Qdrant
-async fn upsert_entities(
+/// Upsert entity embeddings to Qdrant with streaming (memory-efficient for large datasets)
+async fn upsert_entities_streaming(
     client: &Qdrant,
     collection: &str,
-    entities: Vec<(String, Vec<f32>, String, String, String)>, // (id, embedding, name, entity_type, source_file)
+    entities: impl Iterator<Item = &graphrag_core::core::Entity>,
+    total: usize,
 ) -> std::result::Result<usize, String> {
-    let points: Vec<PointStruct> = entities
-        .into_iter()
-        .map(|(id, embedding, name, entity_type, source_file)| {
-            let mut payload = HashMap::new();
-            payload.insert("name".to_string(), QdrantValue::from(name));
-            payload.insert("entity_type".to_string(), QdrantValue::from(entity_type));
-            payload.insert("source_file".to_string(), QdrantValue::from(source_file));
-            payload.insert("type".to_string(), QdrantValue::from("entity"));
+    let counter = AtomicUsize::new(0);
+    let collection = collection.to_string();
 
-            PointStruct::new(id, embedding, payload)
+    // Collect entities into tuples with UUIDv5 IDs
+    let entity_tuples: Vec<_> = entities
+        .filter_map(|entity| {
+            entity.embedding.as_ref().map(|emb| {
+                let id = entity_id(&entity.name, &entity.entity_type);
+                let source = entity.id.0.clone();
+                (
+                    id,
+                    emb.clone(),
+                    entity.name.clone(),
+                    entity.entity_type.clone(),
+                    source,
+                )
+            })
         })
         .collect();
 
-    let count = points.len();
+    let total_entities = entity_tuples.len();
 
-    // Upsert in batches of 100
-    for batch in points.chunks(100) {
-        client
-            .upsert_points(UpsertPointsBuilder::new(collection, batch.to_vec()))
-            .await
-            .map_err(|e| format!("Failed to upsert entities: {}", e))?;
-    }
+    // Stream in batches of 100 with 4 concurrent uploads
+    futures::stream::iter(entity_tuples)
+        .chunks(100)
+        .for_each_concurrent(4, |batch| {
+            let client = client;
+            let collection = &collection;
+            let counter = &counter;
+            async move {
+                let points: Vec<PointStruct> = batch
+                    .into_iter()
+                    .map(|(id, embedding, name, entity_type, source_file)| {
+                        let mut payload = HashMap::new();
+                        payload.insert("name".to_string(), QdrantValue::from(name));
+                        payload.insert("entity_type".to_string(), QdrantValue::from(entity_type));
+                        payload.insert("source_file".to_string(), QdrantValue::from(source_file));
+                        payload.insert("type".to_string(), QdrantValue::from("entity"));
+                        PointStruct::new(id, embedding, payload)
+                    })
+                    .collect();
 
-    Ok(count)
+                let batch_size = points.len();
+                if let Err(e) = client
+                    .upsert_points(UpsertPointsBuilder::new(collection, points))
+                    .await
+                {
+                    eprintln!("      Batch upload failed: {}", e);
+                }
+                let count = counter.fetch_add(batch_size, Ordering::SeqCst) + batch_size;
+                if count % 1000 < 100 || count == total {
+                    println!("      [{}/{}] entities uploaded...", count, total);
+                }
+            }
+        })
+        .await;
+
+    Ok(total_entities)
 }
 
 // =============================================================================
@@ -684,27 +775,19 @@ async fn main() -> Result<()> {
 
         match setup_qdrant(url, collection).await {
             Ok(client) => {
-                // Prepare chunk data for Qdrant
-                let chunk_data: Vec<_> = graph
-                    .chunks()
-                    .enumerate()
-                    .filter_map(|(idx, chunk)| {
-                        chunk.embedding.as_ref().map(|emb| {
-                            let id = format!("chunk_{}", idx);
-                            let file_path = chunk
-                                .content
-                                .lines()
-                                .next()
-                                .and_then(|l| l.strip_prefix("// file: "))
-                                .unwrap_or("unknown")
-                                .to_string();
-                            (id, emb.clone(), file_path, chunk.content.clone(), idx)
-                        })
-                    })
-                    .collect();
+                // Count chunks with embeddings
+                let chunk_count = graph.chunks().filter(|c| c.embedding.is_some()).count();
+                println!("      Uploading {} chunks to Qdrant (streaming)...", chunk_count);
 
-                println!("      Uploading {} chunks to Qdrant...", chunk_data.len());
-                match upsert_chunks(&client, collection, chunk_data).await {
+                // Stream chunks directly without collecting into Vec
+                match upsert_chunks_streaming(
+                    &client,
+                    collection,
+                    graph.chunks().enumerate(),
+                    chunk_count,
+                )
+                .await
+                {
                     Ok(count) => {
                         qdrant_chunks = count;
                         println!("      Uploaded {} chunks", count);
@@ -712,27 +795,14 @@ async fn main() -> Result<()> {
                     Err(e) => println!("      Warning: Failed to upload chunks: {}", e),
                 }
 
-                // Prepare entity data for Qdrant
-                let entity_data: Vec<_> = graph
-                    .entities()
-                    .filter_map(|entity| {
-                        entity.embedding.as_ref().map(|emb| {
-                            let qdrant_id = format!("entity_{}_{}", entity.name, entity.entity_type);
-                            // Use entity.id as source reference if available
-                            let source = entity.id.0.clone();
-                            (
-                                qdrant_id,
-                                emb.clone(),
-                                entity.name.clone(),
-                                entity.entity_type.clone(),
-                                source,
-                            )
-                        })
-                    })
-                    .collect();
+                // Count entities with embeddings
+                let entity_count = graph.entities().filter(|e| e.embedding.is_some()).count();
+                println!("      Uploading {} entities to Qdrant (streaming)...", entity_count);
 
-                println!("      Uploading {} entities to Qdrant...", entity_data.len());
-                match upsert_entities(&client, collection, entity_data).await {
+                // Stream entities directly without collecting into Vec
+                match upsert_entities_streaming(&client, collection, graph.entities(), entity_count)
+                    .await
+                {
                     Ok(count) => {
                         qdrant_entities = count;
                         println!("      Uploaded {} entities", count);

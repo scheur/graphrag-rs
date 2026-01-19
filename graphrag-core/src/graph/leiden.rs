@@ -1,17 +1,19 @@
 //! Leiden community detection algorithm
 //!
 //! Improves upon Louvain algorithm by adding a refinement phase that prevents
-//! poorly connected communities. Implements hierarchical clustering for multi-level
-//! community structure.
+//! poorly connected communities. Implements hierarchical clustering for
+//! multi-level community structure.
 //!
 //! Reference: "From Louvain to Leiden: guaranteeing well-connected communities"
 //! Traag, Waltman & van Eck (2019)
 
 use std::collections::{HashMap, HashSet};
-use petgraph::graph::{Graph, NodeIndex};
-use petgraph::Undirected;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+
+use petgraph::{
+    graph::{Graph, NodeIndex},
+    Undirected,
+};
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::Result;
 
@@ -41,11 +43,16 @@ pub struct HierarchicalCommunities {
     /// Maps community ID at level N to parent community ID at level N+1
     pub hierarchy: HashMap<usize, Option<usize>>,
 
-    /// LLM-generated summaries for each community (optional)
+    /// LLM-generated summaries for each community (optional, legacy)
     pub summaries: HashMap<usize, String>,
 
     /// Mapping from entity names to metadata (enriched from KnowledgeGraph)
     pub entity_mapping: Option<HashMap<String, EntityMetadata>>,
+
+    /// Microsoft GraphRAG-compatible community reports (optional)
+    /// Rich LLM-generated reports with title, summary, findings, and rank
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reports: Option<super::community_report::CommunityReports>,
 }
 
 impl HierarchicalCommunities {
@@ -153,7 +160,8 @@ impl HierarchicalCommunities {
         // Group by entity type
         let mut by_type: HashMap<String, Vec<&EntityMetadata>> = HashMap::new();
         for meta in &metadata {
-            by_type.entry(meta.entity_type.clone())
+            by_type
+                .entry(meta.entity_type.clone())
                 .or_insert_with(Vec::new)
                 .push(meta);
         }
@@ -206,7 +214,8 @@ impl HierarchicalCommunities {
             let community_ids: HashSet<usize> = level_communities.values().copied().collect();
 
             for community_id in community_ids {
-                let summary = self.generate_community_summary(level, community_id, graph, max_length);
+                let summary =
+                    self.generate_community_summary(level, community_id, graph, max_length);
                 self.summaries.insert(community_id, summary);
             }
         }
@@ -297,8 +306,9 @@ impl HierarchicalCommunities {
         if level > 0 {
             context_parts.push(String::new());
             context_parts.push("## Sub-community Summaries:".to_string());
-            // Would need to track parent-child relationships to list sub-communities
-            // This is left as a TODO for full hierarchical implementation
+            // Would need to track parent-child relationships to list
+            // sub-communities This is left as a TODO for full
+            // hierarchical implementation
         }
 
         context_parts.join("\n")
@@ -306,8 +316,8 @@ impl HierarchicalCommunities {
 
     /// Retrieve relevant communities using adaptive query routing
     ///
-    /// Automatically selects the appropriate hierarchical level based on query complexity
-    /// and returns matching community summaries.
+    /// Automatically selects the appropriate hierarchical level based on query
+    /// complexity and returns matching community summaries.
     ///
     /// # Arguments
     /// * `query` - User query string
@@ -324,17 +334,17 @@ impl HierarchicalCommunities {
     /// //
     /// // let config = AdaptiveRoutingConfig::default();
     /// // let results = communities.adaptive_retrieve("AI overview", &graph, config);
-    /// use graphrag_core::query::AdaptiveRoutingConfig;
-    /// use graphrag_core::graph::leiden::HierarchicalCommunities;
-    /// use petgraph::graph::Graph;
-    /// use petgraph::Undirected;
     /// use std::collections::HashMap;
+    ///
+    /// use graphrag_core::{graph::leiden::HierarchicalCommunities, query::AdaptiveRoutingConfig};
+    /// use petgraph::{graph::Graph, Undirected};
     ///
     /// let communities = HierarchicalCommunities {
     ///     levels: HashMap::new(),
     ///     hierarchy: HashMap::new(),
     ///     summaries: HashMap::new(),
     ///     entity_mapping: None,
+    ///     reports: None,
     /// };
     /// let graph: Graph<String, f32, Undirected> = Graph::new_undirected();
     /// let config = AdaptiveRoutingConfig::default();
@@ -377,20 +387,21 @@ impl HierarchicalCommunities {
 
         // Get all communities at this level
         if let Some(level_communities) = self.levels.get(&level) {
-            let unique_communities: HashSet<usize> =
-                level_communities.values().copied().collect();
+            let unique_communities: HashSet<usize> = level_communities.values().copied().collect();
 
             for community_id in unique_communities {
                 let entities = self.get_community_entities(level, community_id, graph);
 
                 // Check relevance
-                let is_relevant = entities.iter().any(|entity|
-                    entity.to_lowercase().contains(&query_lower)
-                );
+                let is_relevant = entities
+                    .iter()
+                    .any(|entity| entity.to_lowercase().contains(&query_lower));
 
                 if is_relevant {
                     // Get or generate summary
-                    let summary = self.summaries.get(&community_id)
+                    let summary = self
+                        .summaries
+                        .get(&community_id)
                         .cloned()
                         .unwrap_or_else(|| {
                             // Fallback: create entity list
@@ -407,7 +418,8 @@ impl HierarchicalCommunities {
 
     /// Retrieve with detailed query analysis
     ///
-    /// Returns both the retrieval results and the query analysis that determined the level.
+    /// Returns both the retrieval results and the query analysis that
+    /// determined the level.
     ///
     /// # Arguments
     /// * `query` - User query string
@@ -432,6 +444,197 @@ impl HierarchicalCommunities {
         let results = self.retrieve_at_level(query, graph, analysis.suggested_level);
 
         (analysis, results)
+    }
+
+    // =========================================================================
+    // Community Report Generation (Microsoft GraphRAG-compatible)
+    // =========================================================================
+
+    /// Generate Microsoft GraphRAG-compatible community reports using LLM
+    ///
+    /// This method generates rich reports with title, summary, findings, and
+    /// rank for each community. Reports are designed to fit in LLM context
+    /// windows (~500-1000 tokens each).
+    ///
+    /// # Arguments
+    /// * `graph` - The Leiden graph to extract entity names from
+    /// * `knowledge_graph` - The full KnowledgeGraph for relationship access
+    /// * `llm` - LLM client implementing the LLMClient trait
+    /// * `config` - Configuration for report generation
+    ///
+    /// # Returns
+    /// Result with generated reports stored in `self.reports`
+    #[cfg(feature = "async")]
+    pub async fn generate_reports<L: crate::summarization::LLMClient>(
+        &mut self,
+        graph: &Graph<String, f32, Undirected>,
+        knowledge_graph: &crate::core::KnowledgeGraph,
+        llm: &L,
+        config: super::community_report::CommunityReportConfig,
+    ) -> crate::Result<()> {
+        use super::community_report::{CommunityInput, CommunityReportGenerator};
+
+        let generator = CommunityReportGenerator::new(config.clone());
+
+        // Collect all community inputs
+        let mut inputs = Vec::new();
+
+        for (&level, level_communities) in &self.levels {
+            // Skip levels not in config filter
+            if !config.levels.is_empty() && !config.levels.contains(&level) {
+                continue;
+            }
+
+            // Get unique community IDs at this level
+            let unique_communities: HashSet<usize> = level_communities.values().copied().collect();
+
+            for community_id in unique_communities {
+                // Get entities in this community
+                let entity_names = self.get_community_entities(level, community_id, graph);
+                if entity_names.len() < config.min_community_size {
+                    continue;
+                }
+
+                // Build entity tuples: (id, name, type)
+                let entities: Vec<(String, String, String)> = entity_names
+                    .iter()
+                    .filter_map(|name| {
+                        self.entity_mapping
+                            .as_ref()
+                            .and_then(|mapping| {
+                                mapping.get(name).map(|meta| {
+                                    (meta.id.clone(), meta.name.clone(), meta.entity_type.clone())
+                                })
+                            })
+                            .or_else(|| {
+                                // Fallback: use name as both id and name
+                                Some((name.clone(), name.clone(), "unknown".to_string()))
+                            })
+                    })
+                    .collect();
+
+                // Get relationships within this community
+                let entity_set: HashSet<&str> = entity_names.iter().map(|s| s.as_str()).collect();
+                let relationships: Vec<(String, String, String)> = knowledge_graph
+                    .get_all_relationships()
+                    .iter()
+                    .filter_map(|rel| {
+                        let src = knowledge_graph.get_entity(&rel.source)?;
+                        let tgt = knowledge_graph.get_entity(&rel.target)?;
+                        if entity_set.contains(src.name.as_str())
+                            && entity_set.contains(tgt.name.as_str())
+                        {
+                            Some((
+                                src.name.clone(),
+                                tgt.name.clone(),
+                                rel.relation_type.clone(),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Build context (parent summary if available)
+                let context = if level > 0 {
+                    self.hierarchy
+                        .get(&community_id)
+                        .and_then(|parent_id| parent_id.as_ref())
+                        .and_then(|pid| self.summaries.get(pid))
+                        .map(|s| format!("Parent community: {}", s))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+
+                inputs.push(CommunityInput {
+                    community_id,
+                    level,
+                    entities,
+                    relationships,
+                    context,
+                });
+            }
+        }
+
+        tracing::info!(
+            "Generating reports for {} communities across {} levels",
+            inputs.len(),
+            self.levels.len()
+        );
+
+        // Generate reports
+        let reports = generator.generate_reports(&inputs, llm).await?;
+
+        self.reports = Some(reports);
+        Ok(())
+    }
+
+    /// Generate extractive (non-LLM) community reports as fallback
+    ///
+    /// Creates basic reports without LLM, useful for testing or when LLM is
+    /// unavailable.
+    pub fn generate_extractive_reports(
+        &mut self,
+        graph: &Graph<String, f32, Undirected>,
+        config: super::community_report::CommunityReportConfig,
+    ) {
+        use super::community_report::{CommunityInput, CommunityReportGenerator, CommunityReports};
+
+        let generator = CommunityReportGenerator::new(config.clone());
+        let mut reports = CommunityReports::new();
+
+        for (&level, level_communities) in &self.levels {
+            if !config.levels.is_empty() && !config.levels.contains(&level) {
+                continue;
+            }
+
+            let unique_communities: HashSet<usize> = level_communities.values().copied().collect();
+
+            for community_id in unique_communities {
+                let entity_names = self.get_community_entities(level, community_id, graph);
+                if entity_names.len() < config.min_community_size {
+                    continue;
+                }
+
+                let entities: Vec<(String, String, String)> = entity_names
+                    .iter()
+                    .filter_map(|name| {
+                        self.entity_mapping
+                            .as_ref()
+                            .and_then(|mapping| {
+                                mapping.get(name).map(|meta| {
+                                    (meta.id.clone(), meta.name.clone(), meta.entity_type.clone())
+                                })
+                            })
+                            .or_else(|| Some((name.clone(), name.clone(), "unknown".to_string())))
+                    })
+                    .collect();
+
+                let input = CommunityInput {
+                    community_id,
+                    level,
+                    entities,
+                    relationships: Vec::new(), // No relationships for extractive
+                    context: String::new(),
+                };
+
+                let report = generator.generate_extractive_report(&input);
+                reports.add(report);
+            }
+        }
+
+        self.reports = Some(reports);
+    }
+
+    /// Get community reports if generated
+    pub fn get_reports(&self) -> Option<&super::community_report::CommunityReports> {
+        self.reports.as_ref()
+    }
+
+    /// Check if reports have been generated
+    pub fn has_reports(&self) -> bool {
+        self.reports.is_some()
     }
 }
 
@@ -506,8 +709,9 @@ impl LeidenCommunityDetector {
         Ok(HierarchicalCommunities {
             levels,
             hierarchy,
-            summaries: HashMap::new(),  // Filled later by LLM if needed
-            entity_mapping: None,  // Enriched when called from KnowledgeGraph
+            summaries: HashMap::new(), // Filled later by LLM if needed
+            entity_mapping: None,      // Enriched when called from KnowledgeGraph
+            reports: None,             // Generated via generate_reports() method
         })
     }
 
@@ -515,7 +719,10 @@ impl LeidenCommunityDetector {
     fn hierarchical_leiden(
         &self,
         graph: &Graph<String, f32, Undirected>,
-    ) -> Result<(HashMap<usize, HashMap<NodeIndex, usize>>, HashMap<usize, Option<usize>>)> {
+    ) -> Result<(
+        HashMap<usize, HashMap<NodeIndex, usize>>,
+        HashMap<usize, Option<usize>>,
+    )> {
         let mut levels = HashMap::new();
         let hierarchy = HashMap::new();
 
@@ -525,6 +732,21 @@ impl LeidenCommunityDetector {
         // Phase 1: Initialize each node in its own community
         let mut communities = self.initialize_communities(&current_graph);
 
+        // Precompute node degrees (never changes)
+        let node_degrees: HashMap<NodeIndex, f32> = current_graph
+            .node_indices()
+            .map(|n| (n, current_graph.edges(n).count() as f32))
+            .collect();
+
+        // Precompute total edges
+        let total_edges = current_graph.edge_count() as f32 * 2.0;
+
+        // Initialize community degree cache
+        let mut community_degrees: HashMap<usize, f32> = HashMap::new();
+        for (&node, &comm) in &communities {
+            *community_degrees.entry(comm).or_insert(0.0) += node_degrees[&node];
+        }
+
         // Phase 2: Local moving (greedy modularity optimization)
         let mut improved = true;
         let mut iteration = 0;
@@ -533,13 +755,25 @@ impl LeidenCommunityDetector {
         while improved && iteration < MAX_ITERATIONS {
             improved = false;
             for node in current_graph.node_indices() {
-                let best_community = self.find_best_community(
+                let current_community = communities[&node];
+                let node_degree = node_degrees[&node];
+
+                // Find best community using cached degrees
+                let best_community = self.find_best_community_cached(
                     &current_graph,
                     node,
+                    current_community,
+                    node_degree,
+                    total_edges,
                     &communities,
+                    &community_degrees,
                 );
 
-                if best_community != communities[&node] {
+                if best_community != current_community {
+                    // Update community degrees cache
+                    *community_degrees.entry(current_community).or_insert(0.0) -= node_degree;
+                    *community_degrees.entry(best_community).or_insert(0.0) += node_degree;
+
                     communities.insert(node, best_community);
                     improved = true;
                 }
@@ -561,13 +795,16 @@ impl LeidenCommunityDetector {
         &self,
         graph: &Graph<String, f32, Undirected>,
     ) -> HashMap<NodeIndex, usize> {
-        graph.node_indices()
+        graph
+            .node_indices()
             .enumerate()
             .map(|(i, node)| (node, i))
             .collect()
     }
 
     /// Find best community for a node using greedy modularity optimization
+    /// (Kept for reference - superseded by find_best_community_cached)
+    #[allow(dead_code)]
     fn find_best_community(
         &self,
         graph: &Graph<String, f32, Undirected>,
@@ -597,6 +834,68 @@ impl LeidenCommunityDetector {
                 neighbor_community,
                 communities,
             );
+
+            if delta > best_delta_modularity {
+                best_delta_modularity = delta;
+                best_community = neighbor_community;
+            }
+        }
+
+        best_community
+    }
+
+    /// Find best community using cached community degrees (O(degree) instead of
+    /// O(n))
+    fn find_best_community_cached(
+        &self,
+        graph: &Graph<String, f32, Undirected>,
+        node: NodeIndex,
+        current_community: usize,
+        node_degree: f32,
+        total_edges: f32,
+        communities: &HashMap<NodeIndex, usize>,
+        community_degrees: &HashMap<usize, f32>,
+    ) -> usize {
+        let mut best_community = current_community;
+        let mut best_delta_modularity = 0.0;
+
+        // Get neighboring communities
+        let neighbor_communities: HashSet<usize> = graph
+            .neighbors(node)
+            .filter_map(|neighbor| communities.get(&neighbor).copied())
+            .collect();
+
+        // Precompute edges to current community
+        let k_i_in_from: usize = graph
+            .neighbors(node)
+            .filter(|&neighbor| communities.get(&neighbor) == Some(&current_community))
+            .count();
+        let sigma_tot_from = community_degrees
+            .get(&current_community)
+            .copied()
+            .unwrap_or(0.0);
+
+        // Try each neighboring community
+        for &neighbor_community in &neighbor_communities {
+            if neighbor_community == current_community {
+                continue;
+            }
+
+            // Count edges to target community
+            let k_i_in_to: usize = graph
+                .neighbors(node)
+                .filter(|&neighbor| communities.get(&neighbor) == Some(&neighbor_community))
+                .count();
+            let sigma_tot_to = community_degrees
+                .get(&neighbor_community)
+                .copied()
+                .unwrap_or(0.0);
+
+            // Delta Q using Newman's modularity formula
+            let delta = ((k_i_in_to as f32 - k_i_in_from as f32) / total_edges)
+                - self.config.resolution
+                    * node_degree
+                    * ((sigma_tot_to - sigma_tot_from + node_degree) / (total_edges * total_edges));
 
             if delta > best_delta_modularity {
                 best_delta_modularity = delta;
@@ -720,6 +1019,8 @@ impl LeidenCommunityDetector {
     }
 
     /// Calculate modularity delta for moving node between communities
+    /// (Kept for reference - used by non-cached find_best_community)
+    #[allow(dead_code)]
     fn calculate_modularity_delta(
         &self,
         graph: &Graph<String, f32, Undirected>,
@@ -729,7 +1030,7 @@ impl LeidenCommunityDetector {
         communities: &HashMap<NodeIndex, usize>,
     ) -> f32 {
         let degree = graph.edges(node).count() as f32;
-        let total_edges = graph.edge_count() as f32 * 2.0;  // Undirected
+        let total_edges = graph.edge_count() as f32 * 2.0; // Undirected
 
         // Edges to communities
         let k_i_in_to = self.edges_to_community(graph, node, to_community, communities);
@@ -741,13 +1042,16 @@ impl LeidenCommunityDetector {
 
         // Delta Q using Newman's modularity formula
         let delta = ((k_i_in_to as f32 - k_i_in_from as f32) / total_edges)
-            - self.config.resolution * degree
-            * ((sigma_tot_to - sigma_tot_from + degree) / (total_edges * total_edges));
+            - self.config.resolution
+                * degree
+                * ((sigma_tot_to - sigma_tot_from + degree) / (total_edges * total_edges));
 
         delta
     }
 
     /// Count edges from node to a specific community
+    /// (Kept for reference - used by non-cached calculate_modularity_delta)
+    #[allow(dead_code)]
     fn edges_to_community(
         &self,
         graph: &Graph<String, f32, Undirected>,
@@ -755,19 +1059,23 @@ impl LeidenCommunityDetector {
         community: usize,
         communities: &HashMap<NodeIndex, usize>,
     ) -> usize {
-        graph.neighbors(node)
+        graph
+            .neighbors(node)
             .filter(|&neighbor| communities.get(&neighbor) == Some(&community))
             .count()
     }
 
     /// Calculate total degree of all nodes in a community
+    /// (Kept for reference - used by non-cached calculate_modularity_delta)
+    #[allow(dead_code)]
     fn total_degree_of_community(
         &self,
         graph: &Graph<String, f32, Undirected>,
         community: usize,
         communities: &HashMap<NodeIndex, usize>,
     ) -> f32 {
-        communities.iter()
+        communities
+            .iter()
             .filter(|(_, &c)| c == community)
             .map(|(&node, _)| graph.edges(node).count() as f32)
             .sum()
@@ -837,11 +1145,7 @@ mod tests {
         let detector = LeidenCommunityDetector::new(config);
 
         // First 3 nodes form connected triangle
-        let nodes = vec![
-            NodeIndex::new(0),
-            NodeIndex::new(1),
-            NodeIndex::new(2),
-        ];
+        let nodes = vec![NodeIndex::new(0), NodeIndex::new(1), NodeIndex::new(2)];
 
         assert!(detector.is_well_connected(&graph, &nodes));
     }

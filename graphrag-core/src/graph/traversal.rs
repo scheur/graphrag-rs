@@ -569,7 +569,7 @@ impl GraphTraversal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{Entity, EntityMention, Relationship};
+    use crate::core::{Entity, Relationship};
 
     fn create_test_graph() -> KnowledgeGraph {
         let mut graph = KnowledgeGraph::new();
@@ -601,10 +601,10 @@ mod tests {
             0.9,
         );
 
-        graph.add_entity(entity_a);
-        graph.add_entity(entity_b);
-        graph.add_entity(entity_c);
-        graph.add_entity(entity_d);
+        let _ = graph.add_entity(entity_a);
+        let _ = graph.add_entity(entity_b);
+        let _ = graph.add_entity(entity_c);
+        let _ = graph.add_entity(entity_d);
 
         // Add relationships
         let _ = graph.add_relationship(Relationship {

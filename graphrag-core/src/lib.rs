@@ -203,6 +203,12 @@ pub use crate::graph::leiden::{
     HierarchicalCommunities, LeidenConfig, LeidenCommunityDetector,
 };
 
+// Community reports (always available, Microsoft GraphRAG-compatible)
+pub use crate::graph::community_report::{
+    CommunityInput, CommunityReport, CommunityReportConfig, CommunityReportGenerator,
+    CommunityReports, Finding, COMMUNITY_REPORT_PROMPT, CODE_COMMUNITY_REPORT_PROMPT,
+};
+
 #[cfg(feature = "cross-encoder")]
 pub use crate::reranking::cross_encoder::{
     CrossEncoder, CrossEncoderConfig, ConfidenceCrossEncoder,

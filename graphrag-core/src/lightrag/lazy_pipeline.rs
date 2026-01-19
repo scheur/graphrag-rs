@@ -90,6 +90,7 @@ pub struct LazyGraphRAGPipeline {
     graph_builder: ConceptGraphBuilder,
     concept_graph: Option<ConceptGraph>,
     bidirectional_index: Option<BidirectionalIndex>,
+    #[allow(dead_code)] // TODO: Integrate query refinement into search pipeline
     query_refiner: QueryRefiner,
     search_engine: IterativeDeepeningSearch,
     chunks: HashMap<ChunkId, TextChunk>,

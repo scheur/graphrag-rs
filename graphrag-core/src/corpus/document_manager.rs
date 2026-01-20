@@ -255,12 +255,9 @@ impl DocumentManager {
 
     /// Calculate content hash for deduplication
     fn calculate_content_hash(&self, content: &str) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        content.hash(&mut hasher);
-        format!("hash_{:x}", hasher.finish())
+        // Blake3 is faster than SHA-256 and provides 256-bit collision-resistant hashes
+        let hash = blake3::hash(content.as_bytes());
+        hash.to_hex().to_string()
     }
 
     /// Basic language detection (placeholder implementation)

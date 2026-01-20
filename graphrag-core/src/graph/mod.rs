@@ -30,9 +30,33 @@ pub mod leiden;
 // Community reports for Microsoft GraphRAG-compatible output
 pub mod community_report;
 
+// Re-exports that are always available (with async feature)
 #[cfg(feature = "async")]
 pub use incremental::{
-    ConflictStrategy, IncrementalGraphManager, IncrementalStatistics,
+    // Core types
+    ChangeType, ConsistencyReport, DeltaStatus, GraphStatistics as IncrementalGraphStatistics,
+    IncrementalStatistics, Operation, TransactionId, UpdateId,
+    // Change tracking
+    ChangeData, ChangeRecord, Document as IncrementalDocument, GraphDelta, RollbackData,
+    // Conflict resolution
+    Conflict, ConflictResolution, ConflictResolver, ConflictStrategy, ConflictType,
+    // Cache invalidation (basic types)
+    CacheRegion, InvalidationStats, InvalidationStrategy,
+    // Monitoring (basic types)
+    OperationLog, PerformanceStats, UpdateMetric,
+    // Manager config
+    IncrementalConfig,
+    // Batch metrics
+    BatchMetrics,
+    // Store (trait and types)
+    ChangeEvent, ChangeEventType, IncrementalGraphStore,
+};
+
+// Re-exports that require incremental feature
+#[cfg(all(feature = "async", feature = "incremental"))]
+pub use incremental::{
+    BatchProcessor, IncrementalGraphManager, IncrementalPageRank, ProductionGraphStore,
+    SelectiveInvalidation, UpdateMonitor,
 };
 
 pub use analytics::{

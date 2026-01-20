@@ -6,6 +6,7 @@
 use crate::{Result, GraphRAGError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -73,6 +74,13 @@ pub struct IncrementalConfig {
     /// Determines how to handle situations where new data conflicts with
     /// existing graph data (e.g., different attribute values for the same entity).
     pub conflict_resolution: ConflictResolution,
+
+    /// Path to persist change detector state across restarts
+    ///
+    /// When set, document hashes and entity versions are saved to disk after each update
+    /// and loaded on initialization, enabling efficient incremental updates across sessions.
+    /// If None, change detection state is only kept in memory (lost on restart).
+    pub cache_path: Option<PathBuf>,
 }
 
 impl Default for IncrementalConfig {
@@ -83,6 +91,7 @@ impl Default for IncrementalConfig {
             max_batch_size: 1000,
             parallel_updates: true,
             conflict_resolution: ConflictResolution::LatestWins,
+            cache_path: None,
         }
     }
 }
@@ -360,13 +369,55 @@ pub enum UpdateType {
 }
 
 /// Change detection for incremental updates
-#[derive(Debug, Clone)]
+///
+/// Tracks content hashes to detect document changes and avoid redundant processing.
+/// Can be persisted to disk for efficient incremental updates across restarts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ChangeDetector {
-    /// Document hashes for change detection
+    /// Document hashes for change detection (document_id -> Blake3 hash)
     document_hashes: HashMap<String, String>,
-    /// Entity version tracking
+    /// Entity version tracking (entity_id -> version number)
     #[allow(dead_code)]
     entity_versions: HashMap<String, u32>,
+}
+
+impl ChangeDetector {
+    /// Create a new empty change detector
+    fn new() -> Self {
+        Self {
+            document_hashes: HashMap::new(),
+            entity_versions: HashMap::new(),
+        }
+    }
+
+    /// Load change detector state from disk
+    fn load(cache_path: &PathBuf) -> Result<Self> {
+        if !cache_path.exists() {
+            return Ok(Self::new());
+        }
+
+        // Read file - std::io::Error converts via From impl
+        let data = std::fs::read(cache_path)?;
+
+        // Parse JSON - serde_json::Error converts via From impl
+        Ok(serde_json::from_slice(&data)?)
+    }
+
+    /// Save change detector state to disk
+    fn save(&self, cache_path: &PathBuf) -> Result<()> {
+        // Ensure parent directory exists
+        if let Some(parent) = cache_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Serialize to JSON - serde_json::Error converts via From impl
+        let data = serde_json::to_vec_pretty(self)?;
+
+        // Write to file - std::io::Error converts via From impl
+        std::fs::write(cache_path, data)?;
+
+        Ok(())
+    }
 }
 
 impl IncrementalGraphManager {
@@ -388,15 +439,22 @@ impl IncrementalGraphManager {
     /// let manager = IncrementalGraphManager::new(config);
     /// ```
     pub fn new(config: IncrementalConfig) -> Self {
+        // Load change detector from cache if path is configured
+        let change_detector = if let Some(ref cache_path) = config.cache_path {
+            ChangeDetector::load(cache_path).unwrap_or_else(|e| {
+                tracing::warn!("Failed to load change detector cache: {}, starting fresh", e);
+                ChangeDetector::new()
+            })
+        } else {
+            ChangeDetector::new()
+        };
+
         Self {
             graph: Arc::new(RwLock::new(DiGraph::new())),
             node_index: Arc::new(RwLock::new(HashMap::new())),
             update_history: Arc::new(RwLock::new(Vec::new())),
             config,
-            change_detector: ChangeDetector {
-                document_hashes: HashMap::new(),
-                entity_versions: HashMap::new(),
-            },
+            change_detector,
         }
     }
 
@@ -606,10 +664,9 @@ impl IncrementalGraphManager {
     }
 
     fn hash_content(&self, content: &DocumentContent) -> String {
-        use sha2::{Sha256, Digest};
-        let mut hasher = Sha256::new();
-        hasher.update(content.text.as_bytes());
-        format!("{:x}", hasher.finalize())
+        // Blake3 is faster than SHA-256 and ideal for change detection
+        let hash = blake3::hash(content.text.as_bytes());
+        hash.to_hex().to_string()
     }
 
     fn extract_from_content(&self, _content: &DocumentContent) -> Result<ExtractionResult> {
@@ -700,6 +757,12 @@ impl IncrementalGraphManager {
     fn update_change_detector(&mut self, content: &DocumentContent) -> Result<()> {
         let hash = self.hash_content(content);
         self.change_detector.document_hashes.insert(content.id.clone(), hash);
+
+        // Persist to disk if cache path is configured
+        if let Some(ref cache_path) = self.config.cache_path {
+            self.change_detector.save(cache_path)?;
+        }
+
         Ok(())
     }
 

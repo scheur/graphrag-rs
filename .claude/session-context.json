@@ -1,0 +1,191 @@
+{
+  "session_id": "1c3f2766-fb51-4727-8fa9-ef8bde582646",
+  "workspace_root": "/Users/scheur/dev/Github/cargo-xray/crates/graphrag-rs",
+  "collection_started_at": "2026-01-19T22:51:07.011Z",
+  "collection_completed_at": "2026-01-19T22:51:08.249Z",
+  "collection_duration_ms": 1238,
+  "priority_mcp_tools": {
+    "description": "Prefer these rdev MCP tools over built-in equivalents for better performance and context efficiency",
+    "tools": [
+      {
+        "name": "mcp__rdev__search_tools",
+        "reason": "Discover 62+ specialized tools across 13 categories",
+        "replaces": null
+      },
+      {
+        "name": "mcp__rdev__rhai",
+        "reason": "Context-optimized orchestration: 10-100x fewer tokens for multi-step workflows",
+        "replaces": "sequential tool calls"
+      },
+      {
+        "name": "mcp__rdev__run_shell_command",
+        "reason": "Structured JSON output with timeout and optional sandboxing",
+        "replaces": "Bash"
+      },
+      {
+        "name": "mcp__rdev__diff_edit",
+        "reason": "Search/replace with validation, regex support, and batch alternatives",
+        "replaces": "Edit"
+      },
+      {
+        "name": "mcp__rdev__list_directory_toon",
+        "reason": "30-60% fewer tokens using TOON format",
+        "replaces": "ls/Glob"
+      },
+      {
+        "name": "mcp__rdev__batch_search_replace",
+        "reason": "Multi-file atomic edits with verification and rollback",
+        "replaces": "multiple Edit calls"
+      }
+    ]
+  },
+  "command_history": {
+    "collected_at": "2026-01-19T22:51:07.020Z",
+    "recent_commands": "[]",
+    "time_since_start_ms": 6
+  },
+  "docker": {
+    "collected_at": "2026-01-19T22:51:07.190Z",
+    "containers": [
+      {
+        "image": "mcp/fetch",
+        "name": "quizzical_goldberg",
+        "state": "running",
+        "status": "Up 37 minutes"
+      },
+      {
+        "image": "ghcr.io/github/github-mcp-server",
+        "name": "laughing_gould",
+        "state": "running",
+        "status": "Up 37 minutes"
+      },
+      {
+        "image": "mcp/fetch",
+        "name": "distracted_visvesvaraya",
+        "state": "running",
+        "status": "Up 3 hours"
+      },
+      {
+        "image": "qdrant/qdrant:latest",
+        "name": "qdrant-test",
+        "ports": "6333-6334/tcp",
+        "state": "running",
+        "status": "Up 10 hours"
+      },
+      {
+        "image": "otel/opentelemetry-collector-contrib:latest",
+        "name": "rdev-otel-collector-1",
+        "ports": "0.0.0.0:4317-4318->4317-4318/tcp, [::]:4317-4318->4317-4318/tcp, 0.0.0.0:8888-8889->8888-8889/tcp, [::]:8888-8889->8888-8889/tcp, 0.0.0.0:13133->13133/tcp, [::]:13133->13133/tcp, 0.0.0.0:55679->55679/tcp, [::]:55679->55679/tcp",
+        "state": "running",
+        "status": "Up 10 hours"
+      },
+      {
+        "image": "grafana/promtail:latest",
+        "name": "rdev-promtail-1",
+        "state": "running",
+        "status": "Up 10 hours"
+      },
+      {
+        "image": "grafana/grafana:latest",
+        "name": "rdev-grafana-1",
+        "ports": "0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp",
+        "state": "running",
+        "status": "Up 10 hours (healthy)"
+      },
+      {
+        "image": "grafana/loki:latest",
+        "name": "rdev-loki-1",
+        "ports": "0.0.0.0:3100->3100/tcp, [::]:3100->3100/tcp",
+        "state": "running",
+        "status": "Up 10 hours"
+      },
+      {
+        "image": "prom/prometheus:latest",
+        "name": "rdev-prometheus-1",
+        "ports": "0.0.0.0:9090->9090/tcp, [::]:9090->9090/tcp",
+        "state": "running",
+        "status": "Up 10 hours (healthy)"
+      },
+      {
+        "image": "jaegertracing/all-in-one:latest",
+        "name": "rdev-jaeger-1",
+        "ports": "0.0.0.0:14250->14250/tcp, [::]:14250->14250/tcp, 0.0.0.0:14268->14268/tcp, [::]:14268->14268/tcp, 0.0.0.0:16686->16686/tcp, [::]:16686->16686/tcp",
+        "state": "running",
+        "status": "Up 52 minutes (healthy)"
+      },
+      {
+        "image": "qdrant/qdrant:latest",
+        "name": "qdrant",
+        "ports": "0.0.0.0:6333-6334->6333-6334/tcp, [::]:6333-6334->6333-6334/tcp",
+        "state": "running",
+        "status": "Up 10 hours (unhealthy)"
+      },
+      {
+        "image": "neo4j:5.24-community",
+        "name": "neo4j",
+        "ports": "0.0.0.0:7474->7474/tcp, [::]:7474->7474/tcp, 0.0.0.0:7687->7687/tcp, [::]:7687->7687/tcp",
+        "state": "running",
+        "status": "Up 10 hours (healthy)"
+      }
+    ],
+    "images": [
+      {
+        "created": "8 hours ago",
+        "repo": "ghcr.io/github/github-mcp-server",
+        "size": "64.3MB",
+        "tag": "latest"
+      },
+      {
+        "created": "12 days ago",
+        "repo": "prom/prometheus",
+        "size": "465MB",
+        "tag": "latest"
+      },
+      {
+        "created": "13 days ago",
+        "repo": "otel/opentelemetry-collector-contrib",
+        "size": "411MB",
+        "tag": "latest"
+      },
+      {
+        "created": "4 weeks ago",
+        "repo": "qdrant/qdrant",
+        "size": "289MB",
+        "tag": "latest"
+      },
+      {
+        "created": "4 weeks ago",
+        "repo": "grafana/grafana",
+        "size": "932MB",
+        "tag": "latest"
+      }
+    ],
+    "time_since_start_ms": 9
+  },
+  "aws": {
+    "cloudformation_stacks": [],
+    "collected_at": "2026-01-19T22:51:08.249Z",
+    "ecr_images": [],
+    "ecs_services": [],
+    "time_since_start_ms": 11
+  },
+  "observability": {
+    "collected_at": "2026-01-19T22:51:07.040Z",
+    "jaeger_services": {
+      "data": [
+        "rdev-wt",
+        "rdev-shell",
+        "jaeger-all-in-one",
+        "rdev-http",
+        "cargo-xray",
+        "rust-service"
+      ],
+      "errors": null,
+      "limit": 0,
+      "offset": 0,
+      "total": 6
+    },
+    "loki_available": false,
+    "time_since_start_ms": 13
+  }
+}

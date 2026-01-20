@@ -176,6 +176,7 @@ jsonfixer = { workspace = true }  # JSON repair for LLM output (always available
 moka = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
+blake3 = { workspace = true }
 sha2 = { workspace = true }
 flate2 = { workspace = true }
 indicatif = "0.17"  # Progress bars for long-running operations

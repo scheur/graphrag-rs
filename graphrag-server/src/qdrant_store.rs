@@ -150,6 +150,8 @@ impl QdrantStore {
     /// * `id` - Unique document ID
     /// * `embedding` - Embedding vector
     /// * `metadata` - Document metadata including entities and relationships
+    ///
+    /// Includes automatic retry on transient failures (up to 3 attempts).
     pub async fn add_document(
         &self,
         id: &str,
@@ -159,49 +161,97 @@ impl QdrantStore {
         let payload = serde_json::to_value(&metadata)
             .map_err(|e| QdrantError::OperationError(e.to_string()))?;
 
-        use std::collections::HashMap;
-        let point = PointStruct::new(
-            id.to_string(),
-            embedding,
-            payload.as_object().unwrap().clone().into_iter()
-                .map(|(k, v)| (k, QdrantValue::from(v)))
-                .collect::<HashMap<String, QdrantValue>>(),
-        );
+        let payload_map = payload.as_object()
+            .ok_or_else(|| QdrantError::OperationError("Metadata must serialize to JSON object".to_string()))?
+            .clone()
+            .into_iter()
+            .map(|(k, v)| (k, QdrantValue::from(v)))
+            .collect::<HashMap<String, QdrantValue>>();
 
-        self.client
-            .upsert_points(UpsertPointsBuilder::new(&self.collection_name, vec![point]))
-            .await
-            .map_err(|e| QdrantError::OperationError(e.to_string()))?;
+        let point = PointStruct::new(id.to_string(), embedding, payload_map);
 
-        Ok(())
+        // Retry logic with exponential backoff
+        let max_retries = 3;
+        let mut last_error = None;
+
+        for attempt in 0..max_retries {
+            match self.client
+                .upsert_points(UpsertPointsBuilder::new(&self.collection_name, vec![point.clone()]))
+                .await
+            {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    last_error = Some(e.to_string());
+                    if attempt < max_retries - 1 {
+                        // Exponential backoff: 100ms, 200ms, 400ms
+                        let delay_ms = 100 * (1 << attempt);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    }
+                }
+            }
+        }
+
+        Err(QdrantError::OperationError(format!(
+            "Failed after {} retries: {}",
+            max_retries,
+            last_error.unwrap_or_else(|| "Unknown error".to_string())
+        )))
     }
 
-    /// Add multiple document chunks in batch
-    #[allow(dead_code)]
+    /// Add multiple document chunks in batch with retry logic
+    ///
+    /// Performs a single upsert operation for all documents, with automatic
+    /// retry on transient failures (up to 3 attempts with exponential backoff).
     pub async fn add_documents_batch(
         &self,
         documents: Vec<(String, Vec<f32>, DocumentMetadata)>,
     ) -> Result<(), QdrantError> {
-        let points: Vec<PointStruct> = documents
+        // Build points with proper error handling
+        let points: Result<Vec<PointStruct>, QdrantError> = documents
             .into_iter()
             .map(|(id, embedding, metadata)| {
-                let payload = serde_json::to_value(&metadata).unwrap();
-                PointStruct::new(
-                    id,
-                    embedding,
-                    payload.as_object().unwrap().clone().into_iter()
-                        .map(|(k, v)| (k, QdrantValue::from(v)))
-                        .collect::<HashMap<String, QdrantValue>>(),
-                )
+                let payload = serde_json::to_value(&metadata)
+                    .map_err(|e| QdrantError::OperationError(format!("Failed to serialize metadata: {}", e)))?;
+
+                let payload_map = payload.as_object()
+                    .ok_or_else(|| QdrantError::OperationError("Metadata must serialize to JSON object".to_string()))?
+                    .clone()
+                    .into_iter()
+                    .map(|(k, v)| (k, QdrantValue::from(v)))
+                    .collect::<HashMap<String, QdrantValue>>();
+
+                Ok(PointStruct::new(id, embedding, payload_map))
             })
             .collect();
 
-        self.client
-            .upsert_points(UpsertPointsBuilder::new(&self.collection_name, points))
-            .await
-            .map_err(|e| QdrantError::OperationError(e.to_string()))?;
+        let points = points?;
 
-        Ok(())
+        // Retry logic with exponential backoff
+        let max_retries = 3;
+        let mut last_error = None;
+
+        for attempt in 0..max_retries {
+            match self.client
+                .upsert_points(UpsertPointsBuilder::new(&self.collection_name, points.clone()))
+                .await
+            {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    last_error = Some(e.to_string());
+                    if attempt < max_retries - 1 {
+                        // Exponential backoff: 100ms, 200ms, 400ms
+                        let delay_ms = 100 * (1 << attempt);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    }
+                }
+            }
+        }
+
+        Err(QdrantError::OperationError(format!(
+            "Failed after {} retries: {}",
+            max_retries,
+            last_error.unwrap_or_else(|| "Unknown error".to_string())
+        )))
     }
 
     /// Search for similar documents
